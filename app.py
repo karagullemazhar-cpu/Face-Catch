@@ -195,11 +195,25 @@ def _opts_from_query():
 def _open_capture(src_kind, src):
     """Video dosyası veya YouTube URL'sinden VideoCapture açar."""
     if src_kind == "file":
-        path = os.path.join(UPLOAD_DIR, src)
-        cap = cv2.VideoCapture(path)
-        return cap, path
+        # ponytail: path traversal fix — only allow basenames inside UPLOAD_DIR
+        safe_name = os.path.basename(str(src))
+        if not safe_name or safe_name.startswith('.'):
+            raise RuntimeError("geçersiz dosya adı")
+        path = os.path.join(UPLOAD_DIR, safe_name)
+        real = os.path.realpath(path)
+        base = os.path.realpath(UPLOAD_DIR) + os.sep
+        if not real.startswith(base):
+            raise RuntimeError("dosya dizini dışında")
+        cap = cv2.VideoCapture(real)
+        if not cap.isOpened():
+            raise RuntimeError(f"dosya açılamadı: {safe_name}")
+        return cap, real
     # YouTube URL - yt-dlp ile akışı çöz, sonra cv2 ile aç
-    import subprocess
+    import subprocess, re
+    # ponytail: SSRF mitigation — allow only YouTube domains
+    YT_RE = re.compile(r'^(https?://)?(www\.)?(youtube\.com|youtu\.be|m\.youtube\.com)/', re.I)
+    if not YT_RE.match(str(src) or ''):
+        raise RuntimeError("desteklenen yalnızca YouTube URL'leri")
     try:
         # player_client=android 403'ü aşar (diğer client'lar bu ağda engelli)
         cmd = ["yt-dlp", "-f", "b[height<=720][vcodec!=av01]", "-g", "--no-warnings",
@@ -316,14 +330,22 @@ def set_live_config():
 def stream():
     src_kind = request.args.get("src", "file")
     src = request.args.get("url", "")
-    if src_kind == "file" and not src:
-        # en son yüklenen video dosyasını seç (değiştirilme zamanına göre)
-        files = [f for f in os.listdir(UPLOAD_DIR) if f.lower().endswith((".mp4", ".avi", ".mov", ".mkv"))]
-        if not files:
-            return jsonify({"error": "video yüklenmemiş"}), 400
-        # mtime'a göre en yeni
-        files.sort(key=lambda f: os.path.getmtime(os.path.join(UPLOAD_DIR, f)), reverse=True)
-        src = files[0]
+    if src_kind == "file":
+        # ponytail: sanitize filename from query
+        safe_name = os.path.basename(str(src)) if src else ""
+        if not safe_name:
+            files = [f for f in os.listdir(UPLOAD_DIR) if f.lower().endswith((".mp4", ".avi", ".mov", ".mkv"))]
+            if not files:
+                return jsonify({"error": "video yüklenmemiş"}), 400
+            files.sort(key=lambda f: os.path.getmtime(os.path.join(UPLOAD_DIR, f)), reverse=True)
+            src = files[0]
+        else:
+            src = safe_name
+    if src_kind == "yt":
+        import re
+        YT_RE = re.compile(r'^(https?://)?(www\.)?(youtube\.com|youtu\.be|m\.youtube\.com)/', re.I)
+        if not src or not YT_RE.match(src):
+            return jsonify({"error": "geçersiz YouTube URL"}), 400
     return Response(gen_frames(src_kind, src, None),
                     mimetype="multipart/x-mixed-replace; boundary=frame")
 
@@ -521,6 +543,16 @@ def video_out_start():
         src = _pick_latest_upload()
         if not src:
             return jsonify({"error": "video yüklenmemiş"}), 400
+    # ponytail: validate src kind + file name
+    if src_kind == "file":
+        safe_name = os.path.basename(str(src))
+        if not safe_name or '.' not in safe_name:
+            return jsonify({"error": "geçersiz dosya adı"}), 400
+    if src_kind == "yt":
+        import re
+        YT_RE = re.compile(r'^(https?://)?(www\.)?(youtube\.com|youtu\.be|m\.youtube\.com)/', re.I)
+        if not src or not YT_RE.match(src):
+            return jsonify({"error": "YouTube URL gerekli"}), 400
     if src_kind == "yt" and not src:
         return jsonify({"error": "YouTube URL gerekli"}), 400
     try:
@@ -575,7 +607,11 @@ def video_out_cancel():
 
 @app.route("/videos/<path:name>")
 def serve_video(name):
-    return send_from_directory(VOUT_DIR, name)
+    # ponytail: block path traversal in video serving
+    safe = os.path.basename(name)
+    if safe != name or safe.startswith('.'):
+        return "", 404
+    return send_from_directory(VOUT_DIR, safe)
 
 
 if __name__ == "__main__":
