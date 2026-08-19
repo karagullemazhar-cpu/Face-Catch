@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>UniFace · Yüz Analiz Konsolu</title>
+<title>Face Catch</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -63,7 +63,8 @@ body{
 .langs{display:flex;gap:3px}
 .langb{
   border:1px solid var(--line);background:var(--panel2);border-radius:7px;
-  padding:3px 7px;cursor:pointer;font-size:14px;line-height:1;transition:.15s
+  padding:3px 7px;cursor:pointer;font-size:14px;line-height:1;transition:.15s;
+  color:#fff
 }
 .langb:hover{border-color:var(--acc)}
 .langb.active{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc)}
@@ -223,8 +224,8 @@ input[type=file]::file-selector-button{
 
 <header class="topbar">
   <div class="brand">
-    <div class="logo">U</div>
-    <div><span>UniFace</span><span class="sub">Yüz Analiz Konsolu</span></div>
+    <div class="logo">FC</div>
+    <div><span>Face Catch</span></div>
   </div>
   <div class="spacer"></div>
   <div class="conn"><span class="dot" id="dot"></span><span id="statusTxt">Bağlanıyor</span><span id="devTxt"></span></div>

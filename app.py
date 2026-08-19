@@ -1,5 +1,5 @@
 """
-UniFace Web UI - Flask backend.
+Face Catch Web UI - Flask backend.
 Resim / video dosyası / YouTube akışı üzerinde tüm özellikleri çalıştırır,
 sonucu görüntüler ve hız istatistiklerini döndürür.
 """
@@ -581,7 +581,7 @@ def serve_video(name):
 if __name__ == "__main__":
     # önce motoru yükle (ilk isteği beklemeden)
     get_engine()
-    print(f"UniFace UI başlatılıyor... http://{HOST}:8127  https://{HOST}:8443")
+    print(f"Face Catch UI başlatılıyor... http://{HOST}:8127  https://{HOST}:8443")
     # Kamera sekmesi (getUserMedia) HTTPS ister; self-signed sertifikayla 8443'te aç.
     import ssl as _ssl
     _cert = os.path.join(os.path.dirname(os.path.abspath(__file__)), "certs", "cert.pem")
