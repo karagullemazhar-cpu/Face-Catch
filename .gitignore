@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+
+# Gizli anahtarlar / TLS sertifikaları — asla public repo'ya (yeniden üret: openssl)
+certs/
+
+# Kişisel medya (yüz içeren video/görüntü) — asla public repo'ya
+uploads/
+videos/
+
+# Örnek/demo medya dosyaları
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.jpg
+*.jpeg
+*.png
+!demo.png
+
+# Sistem / editör
+.DS_Store
+*.log

@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UniFace · Yüz Analiz Konsolu</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0b0e14;
+  --bg2:#0f141d;
+  --panel:#131a26;
+  --panel2:#1a2332;
+  --line:#233044;
+  --line2:#2c3b52;
+  --txt:#e8eef6;
+  --muted:#7e8ba1;
+  --dim:#55617a;
+  --acc:#38bdf8;
+  --acc2:#0ea5e9;
+  --green:#34d399;
+  --red:#fb7185;
+  --amber:#fbbf24;
+  --mono:'JetBrains Mono',monospace;
+  --sans:'Inter Tight',system-ui,sans-serif;
+}
+*{box-sizing:border-box; margin:0; padding:0}
+html{scrollbar-color:var(--line2) transparent}
+body{
+  background:
+    radial-gradient(1200px 500px at 85% -10%, rgba(56,189,248,.06), transparent 60%),
+    radial-gradient(900px 400px at -10% 110%, rgba(14,165,233,.05), transparent 55%),
+    var(--bg);
+  color:var(--txt);
+  font-family:var(--sans);
+  font-size:14px;
+  min-height:100vh;
+}
+/* --- üst bar --- */
+.topbar{
+  position:sticky; top:0; z-index:50;
+  display:flex; align-items:center; gap:14px;
+  padding:12px 22px;
+  background:rgba(11,14,20,.82);
+  backdrop-filter:blur(14px);
+  border-bottom:1px solid var(--line);
+}
+.brand{display:flex; align-items:center; gap:10px; font-weight:800; font-size:16px; letter-spacing:-.01em}
+.brand .logo{
+  width:30px;height:30px;border-radius:8px;
+  display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(135deg,var(--acc),var(--acc2));
+  color:#04121a;font-weight:900;font-size:15px;
+  box-shadow:0 0 22px rgba(56,189,248,.35);
+}
+.brand .sub{font-size:10px;color:var(--muted);font-weight:600;letter-spacing:.22em;text-transform:uppercase;display:block;line-height:1}
+.topbar .spacer{flex:1}
+.conn{display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11px;color:var(--muted)}
+.conn .dot{width:8px;height:8px;border-radius:50%;background:var(--dim)}
+.conn .dot.on{background:var(--green);box-shadow:0 0 10px var(--green)}
+.langs{display:flex;gap:3px}
+.langb{
+  border:1px solid var(--line);background:var(--panel2);border-radius:7px;
+  padding:3px 7px;cursor:pointer;font-size:14px;line-height:1;transition:.15s
+}
+.langb:hover{border-color:var(--acc)}
+.langb.active{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc)}
+/* --- içerik --- */
+.wrap{max-width:1420px;margin:0 auto;padding:20px}
+.grid{display:grid;grid-template-columns:336px 1fr;gap:18px;align-items:start}
+@media(max-width:1000px){.grid{grid-template-columns:1fr}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.card-h{
+  display:flex;align-items:center;gap:8px;padding:11px 16px;
+  border-bottom:1px solid var(--line);background:var(--panel2);
+}
+.card-h h2{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.card-h .ic{width:16px;height:16px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--acc)}
+.card-b{padding:14px 16px}
+.mt{margin-top:16px}
+/* --- sekmeler --- */
+.tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.tab{
+  padding:9px 6px;border:1px solid var(--line);border-radius:9px;
+  background:var(--panel2);color:var(--muted);cursor:pointer;
+  font-weight:600;font-size:12.5px;text-align:center;transition:.15s
+}
+.tab:hover{color:var(--txt);border-color:var(--line2)}
+.tab.active{background:var(--acc);border-color:var(--acc);color:#04121a}
+.tabbody{display:none;margin-top:12px}
+.tabbody.active{display:block}
+/* --- giriş --- */
+input[type=text],input[type=file],input[type=number]{
+  width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;
+  background:var(--bg2);color:var(--txt);font-family:var(--mono);font-size:12.5px;outline:none;transition:.15s
+}
+input[type=text]:focus{border-color:var(--acc)}
+input[type=file]::file-selector-button{
+  border:1px solid var(--line2);border-radius:6px;background:var(--panel2);color:var(--txt);
+  padding:6px 11px;margin-right:10px;cursor:pointer;font-weight:600;font-size:12px
+}
+.hint{font-size:11px;color:var(--dim);margin-top:7px;line-height:1.5}
+/* --- özellik --- */
+.selrow{display:flex;gap:8px;margin-bottom:8px}
+.mini{flex:1;padding:7px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);color:var(--muted);cursor:pointer;font-weight:600;font-size:12px;transition:.15s}
+.mini:hover{color:var(--txt);border-color:var(--line2)}
+.mini.sel{background:var(--acc);color:#04121a;border-color:var(--acc)}
+.feat{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.feat .f{
+  position:relative;padding:9px 10px;border:1px solid var(--line);border-radius:9px;
+  background:var(--bg2);cursor:pointer;transition:.15s;font-size:12.5px;font-weight:600;color:var(--muted)
+}
+.feat .f:hover{border-color:var(--line2);color:var(--txt)}
+.feat .f.on{border-color:var(--acc);background:rgba(56,189,248,.07);color:var(--txt)}
+.feat .f.on::after{
+  content:'';position:absolute;right:9px;top:50%;transform:translateY(-50%);
+  width:6px;height:6px;border-radius:50%;background:var(--acc);box-shadow:0 0 8px var(--acc)
+}
+.feat .f input{position:absolute;opacity:0;pointer-events:none}
+.radio-line{display:flex;align-items:center;gap:7px;margin:3px 0 2px 6px;font-size:12px;color:var(--muted);cursor:pointer}
+.radio-line input{accent-color:var(--acc)}
+.radio-line.checked{color:var(--txt)}
+/* --- aranan kişi --- */
+.refgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
+.refslot{position:relative;aspect-ratio:1;border:1px solid var(--line);border-radius:11px;overflow:hidden;background:var(--bg2);min-height:62px;transition:.15s}
+.refslot.empty{border-style:dashed;cursor:pointer}
+.refslot.empty:hover{border-color:var(--acc);background:rgba(56,189,248,.05)}
+.refplus{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:26px;color:var(--dim);font-weight:300}
+.refslot.empty:hover .refplus{color:var(--acc)}
+.refthumb{width:100%;height:100%;object-fit:cover;display:block}
+.refacts{position:absolute;top:4px;right:4px;display:flex;gap:4px;opacity:0;transition:.15s}
+.refslot:hover .refacts{opacity:1}
+.refacts button{width:24px;height:24px;padding:0;font-size:13px;border-radius:6px;background:rgba(0,0,0,.6);color:#fff;border:1px solid rgba(255,255,255,.14);cursor:pointer;backdrop-filter:blur(4px)}
+.refacts button.del{color:var(--red)}
+.refacts button.del:hover{background:rgba(251,113,133,.15)}
+.reftime{font-family:var(--mono);font-size:11px;color:var(--green);margin-top:9px;min-height:15px}
+/* --- butonlar --- */
+.btns{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:16px}
+.btn{
+  padding:12px;border-radius:10px;font-weight:700;font-size:13.5px;cursor:pointer;
+  transition:.15s;border:1px solid var(--line2);text-align:center
+}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-pri{background:var(--acc);color:#04121a;border-color:var(--acc);grid-column:1/-1;box-shadow:0 4px 20px rgba(56,189,248,.25)}
+.btn-pri:hover:not(:disabled){filter:brightness(1.08);box-shadow:0 6px 26px rgba(56,189,248,.35)}
+.btn-sec{background:var(--panel2);color:var(--txt)}
+.btn-sec:hover:not(:disabled){border-color:var(--acc);color:var(--acc)}
+.btn-danger{background:rgba(251,113,133,.08);color:var(--red);border-color:rgba(251,113,133,.3)}
+.btn-danger:hover:not(:disabled){background:rgba(251,113,133,.16)}
+/* --- sonuç --- */
+.result{min-height:420px}
+.view{position:relative}
+.view img{width:100%;border-radius:10px;display:block;background:#000}
+.overlay-tag{
+  position:absolute;top:12px;left:12px;display:inline-flex;align-items:center;gap:7px;
+  background:rgba(10,14,20,.72);border:1px solid var(--line2);border-radius:999px;
+  padding:5px 12px;font-family:var(--mono);font-size:11.5px;color:var(--green);backdrop-filter:blur(6px)
+}
+.overlay-tag .pulse{width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse 1.6s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.empty{
+  min-height:360px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  color:var(--dim);text-align:center;gap:8px;padding:30px
+}
+.empty .big{font-size:34px;font-weight:200;color:var(--line2)}
+.empty p{font-size:13px;max-width:340px;line-height:1.55}
+.spinner{width:34px;height:34px;border:3px solid var(--line2);border-top-color:var(--acc);border-radius:50%;animation:spin .9s linear infinite;margin:10px auto}
+@keyframes spin{to{transform:rotate(360deg)}}
+/* --- hız --- */
+.speedbox{margin-top:16px;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.speed-h{display:flex;justify-content:space-between;align-items:center;padding:9px 14px;background:var(--panel2);border-bottom:1px solid var(--line);font-weight:700;font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+.speed-h b{font-family:var(--mono);color:var(--acc);font-size:14px}
+.speed-body{display:grid;grid-template-columns:repeat(3,1fr);gap:0}
+@media(max-width:1000px){.speed-body{grid-template-columns:repeat(2,1fr)}}
+.srow{padding:8px 14px;border-bottom:1px solid var(--line);font-size:11.5px}
+.srow:nth-child(3n+1),.srow:nth-child(3n+2){border-right:1px solid var(--line)}
+.srow .k{color:var(--muted);display:flex;justify-content:space-between;margin-bottom:2px}
+.srow .k span:last-child{color:var(--amber);font-family:var(--mono);font-weight:600}
+.srow .v{font-family:var(--mono);font-size:11px;color:var(--dim)}
+.srow.total{grid-column:1/-1;border-right:none;border-bottom:none;background:rgba(56,189,248,.05)}
+.srow.total .k span:last-child{color:var(--acc);font-size:14px}
+/* --- per-face --- */
+.facegrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px;margin-top:16px}
+.fcard{border:1px solid var(--line);border-radius:11px;background:var(--bg2);overflow:hidden}
+.fcard .fhead{display:flex;justify-content:space-between;align-items:center;padding:7px 11px;background:var(--panel2);border-bottom:1px solid var(--line);font-family:var(--mono);font-size:11px;color:var(--acc)}
+.fcard .fbody{padding:9px 11px;font-size:11.5px;line-height:1.6;color:var(--muted);white-space:pre-wrap;word-break:break-word}
+.fcard .fbody b{color:var(--txt)}
+.fcard .fbody .tag{color:var(--green)}
+.fcard .fbody .tag.hit{color:var(--acc);font-weight:700}
+/* --- analizli MP4 (kontrollü oynatma) --- */
+.mp4row{display:flex;gap:9px;margin-top:9px;align-items:stretch}
+.mp4sec{
+  flex:0 0 auto;display:flex;flex-direction:column;gap:4px;justify-content:center;
+  font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:10px;
+  padding:8px 10px;background:var(--bg2);min-width:96px
+}
+.mp4sec input{width:70px;padding:5px 8px}
+#mp4Btn{flex:1;padding:12px}
+#mp4Box{margin-top:16px;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.mp4tools{
+  display:flex;align-items:center;gap:8px;padding:9px 14px;
+  background:var(--panel2);border-bottom:1px solid var(--line);flex-wrap:wrap
+}
+.mp4t{font-weight:700;font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-right:auto}
+.mp4rates{display:flex;gap:4px}
+.mp4rates button{
+  padding:4px 9px;border:1px solid var(--line);border-radius:7px;background:var(--bg2);
+  color:var(--muted);cursor:pointer;font-family:var(--mono);font-size:11.5px;transition:.15s
+}
+.mp4rates button:hover{color:var(--txt);border-color:var(--line2)}
+.mp4rates button.sel{background:var(--acc);color:#04121a;border-color:var(--acc)}
+.mp4dl{font-size:12px;color:var(--acc);text-decoration:none;border:1px solid var(--line2);padding:4px 10px;border-radius:7px;font-weight:600}
+.mp4dl:hover{border-color:var(--acc)}
+#mp4Video{width:100%;display:block;background:#000;max-height:72vh}
+.mp4meta{padding:7px 14px;font-family:var(--mono);font-size:11px;color:var(--dim);border-top:1px solid var(--line)}
+.mp4barwrap{width:100%;max-width:420px;height:8px;border-radius:99px;background:var(--panel2);border:1px solid var(--line);overflow:hidden;margin:10px auto}
+.mp4bar{height:100%;width:0%;background:linear-gradient(90deg,var(--acc),var(--acc2));transition:width .4s}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="logo">U</div>
+    <div><span>UniFace</span><span class="sub">Yüz Analiz Konsolu</span></div>
+  </div>
+  <div class="spacer"></div>
+  <div class="conn"><span class="dot" id="dot"></span><span id="statusTxt">Bağlanıyor</span><span id="devTxt"></span></div>
+  <div class="langs" id="langBar"></div>
+</header>
+
+<div class="wrap">
+  <div class="grid">
+
+    <!-- SOL -->
+    <div>
+      <!-- giriş -->
+      <div class="card">
+        <div class="card-h"><span class="ic">◈</span><h2 data-i18n="srcTitle">Giriş Kaynağı</h2></div>
+        <div class="card-b">
+          <div class="tabs" id="srcTabs">
+            <div class="tab active" data-tab="img" data-i18n="tabImg">Resim</div>
+            <div class="tab" data-tab="vid" data-i18n="tabVid">Video</div>
+            <div class="tab" data-tab="yt" data-i18n="tabYt">YouTube</div>
+            <div class="tab" data-tab="cam" data-i18n="tabCam">Kamera</div>
+          </div>
+          <div class="tabbody active" id="tab-img">
+            <input type="file" id="imgFile" accept="image/*">
+          </div>
+          <div class="tabbody" id="tab-vid">
+            <input type="file" id="vidFile" accept="video/*">
+            <div class="hint" data-i18n="vidHint">Yükledikten sonra Video Başlat ile canlı analiz edilir.</div>
+          </div>
+          <div class="tabbody" id="tab-yt">
+            <input type="text" id="ytUrl" placeholder="https://youtube.com/...">
+          </div>
+          <div class="tabbody" id="tab-cam">
+            <div class="hint" data-i18n="camHint">Kamera Başlat ile web kamerandan canlı yüz analizi. Özellikler anında uygulanır.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- özellikler -->
+      <div class="card mt">
+        <div class="card-h"><span class="ic">◈</span><h2 data-i18n="featTitle">Özellikler</h2></div>
+        <div class="card-b">
+          <div class="selrow">
+            <button class="mini sel" id="selAll" data-i18n="selAll">Hepsini Seç</button>
+            <button class="mini" id="deselAll" data-i18n="deselAll">Temizle</button>
+          </div>
+          <div class="feat">
+            <label class="f on"><input type="checkbox" id="recognition" checked><span data-i18n="fRecog">Yüz Tanıma</span></label>
+            <label class="f on"><input type="checkbox" id="age_sex" checked><span data-i18n="fAgeSex">Yaş ve Cinsiyet</span></label>
+            <label class="f on"><input type="checkbox" id="emotion" checked><span data-i18n="fEmo">Duygu</span></label>
+            <label class="f on"><input type="checkbox" id="face_states" checked><span data-i18n="fStates">Yüz Durumları</span></label>
+            <label class="f on"><input type="checkbox" id="headpose" checked><span data-i18n="fHead">Baş Duruşu</span></label>
+            <label class="f on"><input type="checkbox" id="gaze" checked><span data-i18n="fGaze">Bakış Yönü</span></label>
+            <label class="f on"><input type="checkbox" id="quality" checked><span data-i18n="fQuality">Yüz Kalitesi</span></label>
+            <label class="f on"><input type="checkbox" id="spoofing" checked><span data-i18n="fSpoof">Anti-Spoofing</span></label>
+            <label class="f"><input type="checkbox" id="landmark106"><span data-i18n="fLand">Landmark 106</span></label>
+            <label class="f"><input type="checkbox" id="facemesh"><span data-i18n="fMesh">Face Mesh 3D</span></label>
+            <label class="f"><input type="checkbox" id="tracking"><span data-i18n="fTrack">Takip</span></label>
+            <label class="f"><input type="checkbox" id="parsing"><span data-i18n="fParsing">Yüz Parsing</span></label>
+            <label class="f"><input type="checkbox" id="blur"><span data-i18n="fBlur">Anonimleştir</span></label>
+          </div>
+          <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
+            <label class="f"><input type="checkbox" id="ori_speed"><span data-i18n="oriSpeed">Orijinal Hızda Oynat (canlı akış)</span></label>
+          </div>
+          <div style="margin-top:10px">
+            <div class="radio-line checked" id="r1"><input type="radio" name="agesex" id="as_agegender" checked><span>AgeGender</span></div>
+            <div class="radio-line" id="r2"><input type="radio" name="agesex" id="as_fairface"><span>FairFace (<span data-i18n="raceHint">ırk + yaş grubu</span>)</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- aranan kişi -->
+      <div class="card mt">
+        <div class="card-h"><span class="ic">◈</span><h2 data-i18n="refTitle">Aranan Kişi</h2></div>
+        <div class="card-b">
+          <div class="refgrid" id="refGrid"></div>
+          <div class="reftime" id="refInfo">0/4</div>
+        </div>
+      </div>
+
+      <!-- eylemler -->
+      <div class="card mt">
+        <div class="btns">
+          <button class="btn btn-pri" id="runBtn" data-i18n="runImg">Resmi Analiz Et</button>
+          <button class="btn btn-sec" id="startVidBtn" data-i18n="startVid">Video Başlat</button>
+          <button class="btn btn-sec" id="startCamBtn" data-i18n="startCam">Kamera Başlat</button>
+          <button class="btn btn-danger" id="stopVidBtn" data-i18n="stopVid" disabled>Durdur</button>
+        </div>
+        <div class="mp4row">
+          <label class="mp4sec" for="mp4Seconds"><span data-i18n="mp4Dur">Süre (sn)</span><input type="number" id="mp4Seconds" min="0" step="5" value="0" title="0 = tamamı"></label>
+          <button class="btn btn-sec" id="mp4Btn" disabled data-i18n="mp4Btn">Analizli MP4</button>
+        </div>
+        <div class="hint" style="margin-top:7px" data-i18n="mp4Hint">Video/YouTube için: analizi MP4'e kodlar; seek, sürükleme ve hız (0.25x-4x) ile izlenir. 0 = tamamı (canlıda 10 dk tavan).</div>
+      </div>
+    </div>
+
+    <!-- SAĞ: sonuç -->
+    <div class="card result">
+      <div class="card-h"><span class="ic">◈</span><h2 data-i18n="outTitle">Sonuç</h2></div>
+      <div class="card-b">
+        <div class="empty" id="resultEmpty">
+          <div class="big">◈</div>
+          <p data-i18n="empty1">Kaynak seç, özellikleri işaretle ve analizi başlat.</p>
+          <p data-i18n="empty2">Sonuç, yüz verileri ve hız istatistikleri burada görünür.</p>
+        </div>
+        <div id="resultBody" style="display:none">
+          <div class="view">
+            <span class="overlay-tag" id="liveTag" style="display:none"><span class="pulse"></span><span id="liveTxt">CANLI</span></span>
+            <img id="resImg" alt="sonuç" style="display:none">
+            <img id="resVideo" alt="akış" style="display:none">
+          </div>
+          <div id="mp4Box" style="display:none">
+            <div class="mp4tools">
+              <span class="mp4t" data-i18n="mp4Title">Analizli MP4 · Kontrollü Oynatma</span>
+              <span class="mp4rates" id="mp4Rates">
+                <button data-rate="0.25">0.25x</button>
+                <button data-rate="0.5">0.5x</button>
+                <button data-rate="1" class="sel">1x</button>
+                <button data-rate="1.5">1.5x</button>
+                <button data-rate="2">2x</button>
+                <button data-rate="4">4x</button>
+              </span>
+              <a id="mp4Dl" class="mp4dl" download data-i18n="mp4Dl">İndir</a>
+            </div>
+            <video id="mp4Video" controls playsinline></video>
+            <div class="mp4meta" id="mp4Meta"></div>
+          </div>
+          <div id="speedBox"></div>
+          <div id="statsTable"></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let currentSrc = 'img';
+let uploadedVideo = null;
+let streamActive = false;
+const MAX_REFS = 4;
+const refSlots = [];   // {imgData}
+
+// ============ I18N ============
+const I18N = {
+  tr:{ srcTitle:'Giriş Kaynağı', tabImg:'Resim', tabVid:'Video', tabYt:'YouTube', tabCam:'Kamera', vidHint:'Yükledikten sonra Video Başlat ile canlı analiz edilir.',
+    camHint:'Kamera Başlat ile web kamerandan canlı yüz analizi. Özellikler anında uygulanır.',
+    featTitle:'Özellikler', selAll:'Hepsini Seç', deselAll:'Temizle',
+    fRecog:'Yüz Tanıma', fAgeSex:'Yaş ve Cinsiyet', fEmo:'Duygu', fStates:'Yüz Durumları', fHead:'Baş Duruşu', fGaze:'Bakış Yönü',
+    fQuality:'Yüz Kalitesi', fSpoof:'Anti-Spoofing', fLand:'Landmark 106', fMesh:'Face Mesh 3D', fTrack:'Takip', fParsing:'Yüz Parsing', fBlur:'Anonimleştir',
+    oriSpeed:'Orijinal Hızda Oynat (canlı akış)',
+    raceHint:'ırk + yaş grubu', refTitle:'Aranan Kişi', outTitle:'Sonuç',
+    runImg:'Resmi Analiz Et', startVid:'Video Başlat', startCam:'Kamera Başlat', stopVid:'Durdur',
+    mp4Btn:'Analizli MP4', mp4Dur:'Süre (sn)', mp4Title:'Analizli MP4 · Kontrollü Oynatma',
+    mp4Dl:'İndir', mp4Hint:'Video/YouTube için: analizi MP4\'e kodlar; seek, sürükleme ve hız (0.25x-4x) ile izlenir. 0 = tamamı (canlıda 10 dk tavan).',
+    mp4Frame:'Kare', mp4Working:'işleniyor', mp4Cancel:'İptal',
+    mp4LiveNote:'canlı akış: süreyi "Süre (sn)" ile sınırlayabilirsiniz', mp4DoneIn:'kodlama bitti',
+    empty1:'Kaynak seç, özellikleri işaretle ve analizi başlat.', empty2:'Sonuç, yüz verileri ve hız istatistikleri burada görünür.',
+    loading:'Analiz ediliyor...', loadingYt:'YouTube akışı açılıyor...', ytHint:'Canlı yayın bağlanması birkaç saniye sürebilir.',
+    live:'CANLI ANALİZ', autoStopped:'Akış sona erdi, otomatik durduruldu.', stopped:'Akış durduruldu.',
+    statusReady:'Hazır', statusModels:'model yüklü', vidUp:'Video yüklendi', errBefore:'Önce bir resim seç', errVid:'Önce video dosyası yükle',
+    speedTitle:'Hız İstatistikleri', total:'Toplam', faces:'Yüz sayısı', estFps:'Tahmini FPS', yuklendi:'yüklendi', yuzEkle:'Yüz ekle', degistir:'Değiştir', sil:'Sil',
+    det:'tespit', recog:'tanıma', quality:'kalite', agesex:'yaş/cinsiyet', emotion:'duygu', fstates:'yüz durum', headpose:'baş duruşu', gaze:'bakış', land:'landmark', mesh:'mesh', spoof:'anti-spoof' },
+  en:{ srcTitle:'Input Source', tabImg:'Image', tabVid:'Video', tabYt:'YouTube', tabCam:'Camera', vidHint:'After upload, Start Video analyzes the stream live.',
+    camHint:'Start Camera for live face analysis from your webcam. Features apply instantly.',
+    featTitle:'Features', selAll:'Select All', deselAll:'Deselect All',
+    fRecog:'Recognition', fAgeSex:'Age and Sex', fEmo:'Emotion', fStates:'Face States', fHead:'Head Pose', fGaze:'Gaze',
+    fQuality:'Face Quality', fSpoof:'Anti-Spoofing', fLand:'Landmark 106', fMesh:'Face Mesh 3D', fTrack:'Tracking', fParsing:'Face Parsing', fBlur:'Anonymize',
+    oriSpeed:'Play at original speed (live stream)',
+    raceHint:'race + age group', refTitle:'Person to Find', outTitle:'Result',
+    runImg:'Analyze Image', startVid:'Start Video', startCam:'Start Camera', stopVid:'Stop',
+    mp4Btn:'Analyzed MP4', mp4Dur:'Duration (s)', mp4Title:'Analyzed MP4 · Controlled Playback',
+    mp4Dl:'Download', mp4Hint:'For Video/YouTube: encodes analysis to MP4; play with seek, drag and speed (0.25x-4x). 0 = whole (live capped at 10 min).',
+    mp4Frame:'Frame', mp4Working:'processing', mp4Cancel:'Cancel',
+    mp4LiveNote:'live stream: limit duration with "Duration (s)"', mp4DoneIn:'encoding done',
+    empty1:'Pick a source, check features and start.', empty2:'Result, face data and speed stats appear here.',
+    loading:'Analyzing...', loadingYt:'Opening YouTube stream...', ytHint:'Live stream may take a few seconds.',
+    live:'LIVE', autoStopped:'Stream ended, auto-stopped.', stopped:'Stream stopped.',
+    statusReady:'Ready', statusModels:'models loaded', vidUp:'Video uploaded', errBefore:'Pick an image first', errVid:'Upload a video first',
+    speedTitle:'Speed Stats', total:'Total', faces:'Faces', estFps:'Est. FPS', yuklendi:'loaded', yuzEkle:'Add face', degistir:'Replace', sil:'Delete',
+    det:'detect', recog:'recog', quality:'quality', agesex:'age/sex', emotion:'emotion', fstates:'face state', headpose:'head pose', gaze:'gaze', land:'landmark', mesh:'mesh', spoof:'anti-spoof' }
+};
+const LANGS = ['tr','en','de','es','fr','ru','ar'];
+let LANG = localStorage.getItem('uniface_lang') || 'tr';
+function applyLang(){
+  document.documentElement.lang = LANG;
+  document.querySelectorAll('[data-i18n]').forEach(el=>{
+    const k = el.dataset.i18n;
+    if(I18N[LANG] && I18N[LANG][k]!==undefined) el.textContent = I18N[LANG][k];
+  });
+  document.querySelectorAll('.langb').forEach(b=>b.classList.toggle('active', b.dataset.lang===LANG));
+}
+function buildLangBar(){
+  // bayrak emojileri Windows'ta render olmaz; dil kodu etiketi kullan (güvenilir)
+  $('langBar').innerHTML = LANGS.map(l=>`<button class="langb ${l===LANG?'active':''}" data-lang="${l}">${l.toUpperCase()}</button>`).join('');
+  document.querySelectorAll('.langb').forEach(b=>{ b.onclick=()=>{ LANG=b.dataset.lang; localStorage.setItem('uniface_lang',LANG); applyLang(); }; });
+}
+
+// ============ SEKMELER ============
+function updateButtons(){
+  const isImg = currentSrc === 'img';
+  const isCam = currentSrc === 'cam';
+  $('runBtn').disabled = !isImg;
+  if(isImg){
+    $('startVidBtn').disabled = true;
+    $('startCamBtn').disabled = true;
+    $('stopVidBtn').disabled = true;
+    $('mp4Btn').disabled = true;
+  } else if(isCam){
+    $('startVidBtn').disabled = true;
+    $('startCamBtn').disabled = streamActive;
+    $('stopVidBtn').disabled = !streamActive;
+    $('mp4Btn').disabled = true;
+  } else {
+    $('startVidBtn').disabled = streamActive;
+    $('startCamBtn').disabled = true;
+    $('stopVidBtn').disabled = !streamActive;
+    // MP4: video sekmesinde yüklü video gerekli, YouTube sekmesinde URL buton tıklanırken doğrulanır
+    $('mp4Btn').disabled = (currentSrc==='vid' && !uploadedVideo) || mp4Job!==null;
+  }
+}
+document.querySelectorAll('.tab').forEach(b=>{
+  b.onclick=()=>{
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+    document.querySelectorAll('.tabbody').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active'); $('tab-'+b.dataset.tab).classList.add('active');
+    currentSrc = b.dataset.tab;
+    updateButtons();
+  };
+});
+
+// ============ DURUM ============
+async function refreshStatus(){
+  try{
+    const d = await (await fetch('/api/status')).json();
+    $('dot').classList.add('on');
+    $('statusTxt').textContent = I18N[LANG].statusReady + ' · ' + d.models_loaded.length + ' ' + I18N[LANG].statusModels;
+    $('devTxt').textContent = 'CUDA';
+  }catch(e){ $('statusTxt').textContent = '...'; }
+}
+
+// ============ ARANAN KİŞİ (4 slot) ============
+let pendingIdx = null;
+const refInput = document.createElement('input');
+refInput.type='file'; refInput.accept='image/*'; refInput.style.display='none';
+document.body.appendChild(refInput);
+refInput.onchange = async (e)=>{
+  const f = e.target.files[0]; e.target.value='';
+  if(!f || pendingIdx===null) return;
+  const idx = pendingIdx;
+  const dataUrl = await new Promise((res,rej)=>{ const rd=new FileReader(); rd.onload=()=>res(rd.result); rd.onerror=()=>rej(); rd.readAsDataURL(f); });
+  const fd = new FormData(); fd.append('image', f); fd.append('idx', idx);
+  const d = await (await fetch('/api/reference', {method:'POST', body:fd})).json();
+  if(d.ok){ refSlots[idx]={imgData:dataUrl}; renderRefGrid(); autoAnalyze(); }
+  else alert(d.error||'Hata');
+};
+function renderRefGrid(){
+  const grid=$('refGrid'); grid.innerHTML='';
+  for(let i=0;i<MAX_REFS;i++){
+    const s=refSlots[i]; const d=document.createElement('div');
+    d.className='refslot'+(s?'':' empty');
+    if(s){
+      const im=document.createElement('img'); im.src=s.imgData; im.className='refthumb'; d.appendChild(im);
+      const a=document.createElement('div'); a.className='refacts';
+      const chg=document.createElement('button'); chg.textContent='↻'; chg.title=I18N[LANG].degistir;
+      chg.onclick=(ev)=>{ev.stopPropagation();pendingIdx=i;refInput.click();};
+      const del=document.createElement('button'); del.textContent='✕'; del.title=I18N[LANG].sil; del.className='del';
+      del.onclick=async(ev)=>{ev.stopPropagation();await fetch('/api/clear_reference',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'idx='+i});refSlots[i]=null;renderRefGrid();autoAnalyze();};
+      a.appendChild(chg);a.appendChild(del);d.appendChild(a);
+    } else {
+      const p=document.createElement('div'); p.className='refplus'; p.textContent='+'; p.title=I18N[LANG].yuzEkle;
+      p.onclick=()=>{pendingIdx=i;refInput.click();}; d.appendChild(p);
+    }
+    grid.appendChild(d);
+  }
+  const n=refSlots.filter(s=>s).length;
+  $('refInfo').textContent = n + '/' + MAX_REFS + ' ' + I18N[LANG].yuklendi;
+}
+
+// ============ ÖZELLİKLER ============
+const FEATURE_IDS=['recognition','age_sex','emotion','face_states','headpose','gaze','quality','spoofing','landmark106','facemesh','tracking','parsing','blur'];
+FEATURE_IDS.forEach(id=>{
+  $(id).addEventListener('change',()=>{ $(id).closest('.f').classList.toggle('on', $(id).checked); sendConfig(); autoAnalyze(); });
+});
+$('selAll').onclick=()=>{ FEATURE_IDS.forEach(id=>{ $(id).checked=true; $(id).closest('.f').classList.add('on'); }); sendConfig(); autoAnalyze(); };
+$('deselAll').onclick=()=>{ FEATURE_IDS.forEach(id=>{ $(id).checked=false; $(id).closest('.f').classList.remove('on'); }); sendConfig(); autoAnalyze(); };
+$('r1').addEventListener('click',()=>{ $('r1').classList.add('checked'); $('r2').classList.remove('checked'); sendConfig(); autoAnalyze(); });
+$('r2').addEventListener('click',()=>{ $('r2').classList.add('checked'); $('r1').classList.remove('checked'); sendConfig(); autoAnalyze(); });
+
+function getOpts(){
+  return {
+    recognition:$('recognition').checked, age_sex:$('age_sex').checked,
+    emotion:$('emotion').checked, face_states:$('face_states').checked,
+    headpose:$('headpose').checked, gaze:$('gaze').checked,
+    quality:$('quality').checked, spoofing:$('spoofing').checked,
+    landmark106:$('landmark106').checked, facemesh:$('facemesh').checked,
+    tracking:$('tracking').checked, parsing:$('parsing').checked, blur:$('blur').checked,
+    age_sex_model: $('as_fairface').checked ? 'fairface' : 'agegender',
+    ori_speed: $('ori_speed').checked
+  };
+}
+
+// orijinal hız checkbox'ı: özellik listesi değil, canlı akış zamanlaması → ayrı dinleyici
+$('ori_speed').addEventListener('change', ()=>{ sendConfig(); });
+
+// canlı config'i backend'e gönder (aktif stream anında bu yapılandırmayı kullanır)
+function sendConfig(){
+  fetch('/api/config', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(getOpts())
+  }).catch(()=>{});
+}
+
+// ============ GÖRSEL ============
+function faceLabel(p){
+  const parts=[];
+  if(p.sex && (p.age_group||p.age)) parts.push(`${p.sex} ${p.age_group||p.age}`);
+  if(p.race) parts.push(p.race);
+  if(p.emotion) parts.push(p.emotion);
+  if(p.quality!==undefined) parts.push(`q:${p.quality}`);
+  if(p.is_real!==undefined) parts.push(p.is_real?'REAL':'FAKE');
+  if(p.match_score!==undefined) parts.push(`match:${p.match_score}`);
+  if(p.mask) parts.push('MASK');
+  if(p.track_id!==undefined && p.track_id!==null) parts.push(`#${p.track_id}`);
+  return parts.join(' · ');
+}
+const TLBL=['detection_ms','recognition_ms','quality_ms','age_sex_ms','emotion_ms','face_states_ms','headpose_ms','gaze_ms','landmark106_ms','facemesh_ms','spoofing_ms'];
+const TLBLTR={detection_ms:'det',recognition_ms:'recog',quality_ms:'quality',age_sex_ms:'agesex',emotion_ms:'emotion',face_states_ms:'fstates',headpose_ms:'headpose',gaze_ms:'gaze',landmark106_ms:'land',facemesh_ms:'mesh',spoofing_ms:'spoof'};
+function renderStats(stats){
+  let rows='';
+  TLBL.forEach(k=>{
+    if(stats.timings && stats.timings[k]!==undefined){
+      rows += `<div class="srow"><div class="k"><span>${I18N[LANG][TLBLTR[k]]||k}</span><span>${stats.timings[k]} ms</span></div></div>`;
+    }
+  });
+  rows += `<div class="srow total"><div class="k"><span>${I18N[LANG].total}</span><span>${stats.total_ms} ms</span></div></div>`;
+  rows += `<div class="srow total"><div class="k"><span>${I18N[LANG].faces}</span><span>${stats.faces}</span></div></div>`;
+  if(stats.faces>0 && stats.total_ms>0) rows += `<div class="srow total"><div class="k"><span>${I18N[LANG].estFps}</span><span>~${(1000/stats.total_ms).toFixed(1)}</span></div></div>`;
+  $('speedBox').innerHTML = `<div class="speedbox"><div class="speed-h"><span>${I18N[LANG].speedTitle}</span><b>${stats.total_ms} ms</b></div><div class="speed-body">${rows}</div></div>`;
+  if(!stats.per_face || !stats.per_face.length){ $('statsTable').innerHTML=''; return; }
+  const keys=['emb_shape','quality','sex','age','age_group','race','emotion','emotion_conf','eyeglasses','sunglasses','mask','left_eye_open','right_eye_open','pitch','yaw','roll','gaze_pitch','gaze_yaw','is_real','spoof_conf','match_score','match_ref','track_id'];
+  let cards='';
+  stats.per_face.forEach((p,i)=>{
+    const o={}; keys.forEach(k=>{ if(p[k]!==undefined) o[k]=p[k]; });
+    const hit = p.match_score!==undefined && p.match_score>0.6;
+    cards += `<div class="fcard"><div class="fhead"><span>#${i+1}</span><span class="${hit?'tag hit':'tag'}">${faceLabel(p)}</span></div><div class="fbody">${JSON.stringify(o)}</div></div>`;
+  });
+  $('statsTable').innerHTML = `<div class="facegrid">${cards}</div>`;
+}
+function showLoading(txt){
+  $('resultEmpty').style.display='flex';
+  $('resultEmpty').innerHTML = '<div class="spinner"></div><p>'+(txt||I18N[LANG].loading)+'</p>';
+  $('resultBody').style.display='none';
+}
+function showImg(imgSrc, stats){
+  $('resultEmpty').style.display='none';
+  $('resultBody').style.display='block';
+  const im=$('resImg'), st=$('resVideo'), tag=$('liveTag');
+  st.style.display='none'; st.removeAttribute('src'); tag.style.display='none';
+  im.style.display='block'; im.src=imgSrc;
+  renderStats(stats);
+}
+
+// ============ RESİM ============
+async function runImageAnalysis(){
+  const f=$('imgFile').files[0]; if(!f){ alert(I18N[LANG].errBefore); return; }
+  showLoading();
+  const fd=new FormData(); fd.append('image',f);
+  const o=getOpts(); Object.entries(o).forEach(([k,v])=>fd.append(k,v));
+  try{
+    const d=await (await fetch('/api/analyze',{method:'POST',body:fd})).json();
+    if(d.error){ $('resultEmpty').innerHTML='<div class="big">✕</div><p>'+d.error+'</p>'; return; }
+    showImg('data:image/jpeg;base64,'+d.image_b64, d.stats);
+  }catch(e){ $('resultEmpty').innerHTML='<div class="big">✕</div><p>'+e+'</p>'; }
+}
+// resim sekmesinde otomatik yeniden analiz: sadece resim seçiliyken ve resim tabı aktifken
+function autoAnalyze(img){
+  if(currentSrc!=='img') return;
+  if($('imgFile').files[0] && (!img || $('imgFile').files[0]===img)) runImageAnalysis();
+}
+$('runBtn').onclick = ()=>runImageAnalysis();
+$('imgFile').onchange = (e)=>autoAnalyze(e.target.files[0]);
+
+// ============ VİDEO / YT ============
+$('vidFile').onchange = async (e)=>{
+  const f=e.target.files[0]; if(!f) return;
+  const fd=new FormData(); fd.append('video',f);
+  const d=await (await fetch('/upload_video',{method:'POST',body:fd})).json();
+  if(d.ok){ uploadedVideo=d.file; $('statusTxt').textContent=I18N[LANG].vidUp+': '+d.file; }
+};
+function streamUrl(kind,url){
+  const qs = new URLSearchParams({src:kind});
+  if(url) qs.set('url', url);
+  qs.set('_t', Date.now());   // cache-buster: her başlatmada yeniden oynatmayı garantile
+  return '/api/stream?'+qs.toString();
+}
+function startStream(){
+  const st=$('resVideo'), im=$('resImg'), tag=$('liveTag');
+  im.style.display='none'; im.removeAttribute('src');
+  $('resultEmpty').style.display='none'; $('resultBody').style.display='block';
+  st.onerror=()=>{ stopStream(true); };
+  if(currentSrc==='yt'){
+    const url=$('ytUrl').value.trim(); if(!url){ alert('YouTube URL'); return; }
+    // DİKKAT: img, resultBody İÇİNDE — resultBody gizlenirse akış ekrana hiç gelmezdi
+    const oldOv=$('ytOverlay'); if(oldOv) oldOv.remove();
+    $('resultEmpty').style.display='none';
+    $('resultBody').style.display='block';
+    $('speedBox').innerHTML=''; $('statsTable').innerHTML='';
+    st.style.display='none';   // ilk kare gelene kadar gizli, overlay üstünde
+    st.src=streamUrl('yt',url);
+    const ov=document.createElement('div');
+    ov.id='ytOverlay';
+    ov.style.cssText='position:absolute;inset:0;z-index:6;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;background:var(--bg2);border-radius:10px';
+    ov.innerHTML='<div class="spinner"></div><p style="font-size:13px;color:var(--muted)">'+I18N[LANG].loadingYt+'</p><p class="hint">'+I18N[LANG].ytHint+'</p>';
+    document.querySelector('.view').appendChild(ov);
+    const t=setInterval(()=>{
+      if(st.naturalWidth>0){ clearInterval(t); st.style.display='block'; ov.remove(); }
+    },400);
+  } else {
+    if(!uploadedVideo){ alert(I18N[LANG].errVid); return; }
+    st.src=streamUrl('file',''); st.style.display='block';
+  }
+  tag.style.display='inline-flex'; $('liveTxt').textContent=I18N[LANG].live;
+  streamActive=true; updateButtons();
+}
+function stopStream(auto){
+  const st=$('resVideo'), tag=$('liveTag');
+  const ov=$('ytOverlay'); if(ov) ov.remove();
+  stopCameraLoop();   // kamera açıksa döngüyü/durdur
+  if(st){ st.onerror=null; st.removeAttribute('src'); st.style.display='none'; }
+  $('resImg').style.display='none'; $('resImg').removeAttribute('src');
+  tag.style.display='none';
+  streamActive=false; updateButtons();
+  $('resultBody').style.display='none'; $('resultEmpty').style.display='flex';
+  $('resultEmpty').innerHTML='<div class="big">⏹</div><p>'+(auto?I18N[LANG].autoStopped:I18N[LANG].stopped)+'</p>';
+}
+$('startVidBtn').onclick=startStream;
+$('stopVidBtn').onclick=()=>stopStream(false);
+
+// ============ KAMERA (web kamerası, tarayıcıdan) ============
+// WSL2 kamerayı göremediği için: tarayıcı getUserMedia ile kamerayı açar,
+// kareyi /api/cam_frame'a POST eder, GPU'da analiz edilen kareyi resVideo'da gösterir.
+let camVideo=null, camCanvas=null, camCtx=null, camStream=null, camBusy=false, camGen=0;
+function stopCameraLoop(){
+  camGen++;                       // döngü için iptal işareti
+  camBusy=false;
+  if(camStream){ camStream.getTracks().forEach(t=>t.stop()); camStream=null; }
+  if(camVideo){ camVideo.srcObject=null; }
+}
+async function startCam(){
+  if(streamActive) stopStream(true);
+  if(!camVideo){
+    camVideo=document.createElement('video');
+    camVideo.setAttribute('playsinline','');
+    camVideo.muted=true; camVideo.style.display='none';
+    camCanvas=document.createElement('canvas'); camCtx=camCanvas.getContext('2d',{willReadFrequently:true});
+    document.body.appendChild(camVideo);
+  }
+  try{
+    camStream = await navigator.mediaDevices.getUserMedia({video:{width:1280,height:720}});
+  }catch(err){
+    alert('Kamera açılamadı: '+(err&&err.message||err));
+    return;
+  }
+  camVideo.srcObject=camStream;
+  await camVideo.play().catch(()=>{});
+  const st=$('resVideo'), im=$('resImg'), tag=$('liveTag');
+  im.style.display='none'; im.removeAttribute('src');
+  $('resultEmpty').style.display='none'; $('resultBody').style.display='block';
+  $('speedBox').innerHTML=''; $('statsTable').innerHTML='';
+  st.style.display='block';
+  tag.style.display='inline-flex'; $('liveTxt').textContent=I18N[LANG].live;
+  streamActive=true; updateButtons();
+  const gen=++camGen;
+  camBusy=false;
+  (function loop(){
+    if(gen!==camGen || !streamActive) return;
+    if(!camBusy){
+      camBusy=true;
+      const w=640, h=Math.round(camVideo.videoHeight/camVideo.videoWidth*w||360);
+      camCanvas.width=w; camCanvas.height=h;
+      camCtx.drawImage(camVideo,0,0,w,h);
+      camCanvas.toBlob(async (blob)=>{
+        try{
+          const r=await fetch('/api/cam_frame',{method:'POST',body:blob});
+          if(!r.ok) throw new Error('server '+r.status);
+          const b=await r.blob();
+          if(gen===camGen){
+            if(st._url) URL.revokeObjectURL(st._url);
+            st._url=URL.createObjectURL(b); st.src=st._url;
+          }
+        }catch(e){ /* ara hata: döngü devam etsin */ }
+        finally{ camBusy=false; if(gen===camGen&&streamActive) setTimeout(loop,40); }
+      },'image/jpeg',0.7);
+    } else {
+      setTimeout(loop,20);
+    }
+  })();
+}
+$('startCamBtn').onclick=startCam;
+
+// ============ ANALİZLİ MP4 (kontrollü oynatma) ============
+let mp4Job = null;
+function showMp4Progress(d){
+  const L = I18N[LANG];
+  const pct = d.progress!==null ? Math.floor(d.progress) : 0;
+  const txt = d.total>0
+    ? `${L.mp4Frame} ${d.frame}/${d.total} · ${pct}%`
+    : `${L.mp4Frame} ${d.frame} · ${L.mp4Working}…`;
+  $('resultEmpty').style.display='flex';
+  $('resultEmpty').innerHTML =
+    '<div class="spinner"></div><p>'+txt+'</p>'+
+    '<div class="mp4barwrap"><div class="mp4bar" style="width:'+pct+'%"></div></div>'+
+    '<p class="hint">'+(d.total>0?'':L.mp4LiveNote)+'</p>'+
+    '<button class="btn btn-danger" id="mp4Cancel" style="width:170px">'+L.mp4Cancel+'</button>';
+  $('resultEmpty').querySelector('#mp4Cancel').onclick =
+    ()=>fetch('/api/video_out/cancel?job='+mp4Job,{method:'POST'});
+  $('resultBody').style.display='none';
+  $('mp4Box').style.display='none';
+}
+function showMp4Error(err){
+  $('resultEmpty').style.display='flex';
+  $('resultEmpty').innerHTML='<div class="big">✕</div><p>'+err+'</p>';
+  $('resultBody').style.display='none';
+  $('mp4Box').style.display='none';
+}
+function setMp4Rate(rate){
+  $('mp4Video').playbackRate = rate;
+  document.querySelectorAll('#mp4Rates button').forEach(b=>
+    b.classList.toggle('sel', parseFloat(b.dataset.rate)===rate));
+}
+document.querySelectorAll('#mp4Rates button').forEach(b=>{
+  b.onclick = ()=>setMp4Rate(parseFloat(b.dataset.rate));
+});
+function showMp4Result(d){
+  const v = $('mp4Video');
+  v.src = d.url + (d.url.includes('?')?'&':'?') + '_t=' + Date.now();
+  setMp4Rate(1);
+  v.play().catch(()=>{});
+  $('mp4Dl').href = d.url;
+  $('mp4Meta').textContent =
+    `${d.frames} kare · ${d.res||''} @ ${d.fps||'?'}fps · ${d.avg_ms||'?'} ms/kare · ${d.size_mb||'?'} MB`;
+  // canlı akış/kare görünümünü gizle, MP4 oynatıcıyı göster
+  $('resVideo').style.display='none'; $('resImg').style.display='none';
+  $('liveTag').style.display='none';
+  $('resultEmpty').style.display='none';
+  $('resultBody').style.display='block';
+  $('mp4Box').style.display='block';
+}
+$('mp4Btn').onclick = async ()=>{
+  if(currentSrc==='yt' && !$('ytUrl').value.trim()){ alert('YouTube URL'); return; }
+  if(currentSrc==='vid' && !uploadedVideo){ alert(I18N[LANG].errVid); return; }
+  // GPU'yu paylaşmasınlar: canlı akış çalışıyorsa önce onu durdur
+  if(streamActive) stopStream(true);
+  const body = {
+    src: currentSrc==='yt' ? 'yt' : 'file',
+    url: currentSrc==='yt' ? $('ytUrl').value.trim() : '',
+    seconds: parseInt($('mp4Seconds').value||'0',10)||0,
+    opts: getOpts()
+  };
+  try{
+    const d = await (await fetch('/api/video_out',{method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)})).json();
+    if(d.error){ alert(d.error); updateButtons(); return; }
+    mp4Job = d.job;
+    updateButtons();
+    showMp4Progress({frame:0,total:0,progress:0});
+    pollMp4();
+  }catch(e){ mp4Job=null; alert(''+e); updateButtons(); }
+};
+function pollMp4(){
+  if(!mp4Job) return;
+  const id = mp4Job;
+  fetch('/api/video_out/progress?job='+id).then(r=>r.json()).then(d=>{
+    if(id!==mp4Job) return;   // arada yeni iş başladı
+    if(d.status==='running'){ showMp4Progress(d); setTimeout(pollMp4,1200); }
+    else if(d.status==='done'){ mp4Job=null; showMp4Result(d); updateButtons(); }
+    else { mp4Job=null; showMp4Error(d.error || (d.status==='cancelled' ? I18N[LANG].mp4Cancel : 'hata')); updateButtons(); }
+  }).catch(()=>{ if(id===mp4Job) setTimeout(pollMp4,2500); });
+}
+
+// ============ INIT ============
+buildLangBar(); applyLang(); renderRefGrid(); refreshStatus(); updateButtons();
+setInterval(refreshStatus,5000);
+</script>
+</body>
+</html>

@@ -1,0 +1,541 @@
+"""
+UniFace test motoru.
+Tek bir sınıfta tüm modelleri yükler, resim/video karesi üzerinde
+seçilen özellikleri çalıştırır, sonuç görüntüsünü çizer ve hızı ölçer.
+"""
+import os, time, json, logging
+import numpy as np
+import cv2
+
+# Model cache'i hızlı (WSL ev dizini) olsun; /mnt/c üzerindeki IO yavaş.
+CACHE_DIR = os.path.expanduser("~/.cache/uniface")
+os.makedirs(CACHE_DIR, exist_ok=True)
+
+try:
+    from uniface import set_cache_dir
+    set_cache_dir(CACHE_DIR)
+except Exception:
+    pass
+
+from uniface.detection import SCRFD, RetinaFace
+from uniface.recognition import ArcFace
+from uniface.landmark import Landmark106, FaceMesh, PIPNet
+from uniface.attribute import AgeGender, FairFace, Emotion, FaceAttribNet
+from uniface.gaze import MobileGaze
+from uniface.headpose import HeadPose
+from uniface.quality import EDifFIQA
+from uniface.spoofing import MiniFASNet
+from uniface.parsing import BiSeNet, XSeg
+from uniface.tracking import BYTETracker
+from uniface.privacy import BlurFace
+from uniface import compute_similarity
+from uniface import draw
+
+
+def _bbox_iou(a, b):
+    """İki [x1,y1,x2,y2] kutusunun IoU'su (track_id-yüz eşleştirmesi için)."""
+    ax1, ay1, ax2, ay2 = a
+    bx1, by1, bx2, by2 = b
+    ix1, iy1 = max(ax1, bx1), max(ay1, by1)
+    ix2, iy2 = min(ax2, bx2), min(ay2, by2)
+    iw, ih = max(0.0, ix2 - ix1), max(0.0, iy2 - iy1)
+    inter = iw * ih
+    area_a = max(0.0, ax2 - ax1) * max(0.0, ay2 - ay1)
+    area_b = max(0.0, bx2 - bx1) * max(0.0, by2 - by1)
+    union = area_a + area_b - inter
+    return inter / union if union > 0 else 0.0
+
+
+def _draw_pose_axes(img, cx, cy, size, yaw_deg, pitch_deg, roll_deg):
+    """Baş duruşunu GERÇEK 3D perspektifle çizer. X=kırmızı, Y=yeşil, Z=mavi.
+    Eksenler pinhole kamerayla izdüşürülür: baş döndükçe kısalır/derinleşir,
+    Z '+' yöne (kameraya doğru) çıkınca yakın kısımlar büyüyüp 3D hissi verir."""
+    import math as _m
+    yaw, pitch, roll = _m.radians(yaw_deg), _m.radians(pitch_deg), _m.radians(roll_deg)
+    cy_, sy = _m.cos(yaw), _m.sin(yaw)
+    cp, sp = _m.cos(pitch), _m.sin(pitch)
+    cr, sr = _m.cos(roll), _m.sin(roll)
+    # R = Rz(roll) @ Rx(pitch) @ Ry(yaw)
+    R = [
+        (cr * cy_ + sr * sp * sy, -sr * cp, cr * sy - sr * sp * cy_),
+        (sr * cy_ - cr * sp * sy,  cr * cp, sr * sy + cr * sp * cy_),
+        (cp * sy,                   sp,      cp * cy_),
+    ]
+
+    def proj(px, py, pz, depth0, focal):
+        # rotasyonlu kameraya koordinatini cevir
+        Xc = R[0][0] * px + R[0][1] * py + R[0][2] * pz
+        Yc = R[1][0] * px + R[1][1] * py + R[1][2] * pz
+        Zc = R[2][0] * px + R[2][1] * py + R[2][2] * pz
+        dep = depth0 + Zc
+        if dep < 1e-3:
+            dep = 1e-3
+        return int(cx + focal * Xc / dep), int(cy + focal * Yc / dep), dep, Xc, Yc
+
+    L = size
+    depth0 = size * 4.0      # yüz merkezinin kameraya uzaklığı
+    focal = size * 2.0
+    old = (int(cx), int(cy))
+    axes = [((L, 0, 0), (0, 0, 255), "X"), ((0, L, 0), (0, 255, 0), "Y"), ((0, 0, L), (255, 0, 0), "Z")]
+    for (px, py, pz), col, lab in axes:
+        ex, ey, dep, Xc, Yc = proj(px, py, pz, depth0, focal)
+        # mesafeye gore cizgi kalinligi: yakin=kalın (+Z), uzak=ince (-Z)
+        t = 3 if dep <= depth0 else 2
+        cv2.arrowedLine(img, old, (ex, ey), col, t, tipLength=0.4)
+        cv2.putText(img, lab, (ex + 4, ey - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.7, col, 2, cv2.LINE_AA)
+
+
+def _draw_gaze_arrow(img, cx, cy, length, yaw_deg, pitch_deg):
+    """Bakış yönü okunu çizer (gözlerin baktığı yön). Renk: turuncu."""
+    import math as _m
+    gx = _m.sin(_m.radians(yaw_deg))
+    gy = -_m.sin(_m.radians(pitch_deg))  # ekranda y aşağı: +pitch yukarı demek
+    # küçük açılarda bile görünür olsun diye yön sabit boya ölçeklenir
+    n = _m.hypot(gx, gy)
+    if n < 1e-4:
+        # neredeyse karşıya bakıyor: küçük bir işaret bırak
+        cv2.circle(img, (int(cx), int(cy)), 3, (0, 140, 255), -1)
+        return
+    ex = int(cx + gx / n * length)
+    ey = int(cy + gy / n * length)
+    cv2.arrowedLine(img, (int(cx), int(cy)), (ex, ey), (0, 140, 255), 3, tipLength=0.3)
+
+
+class UnifaceEngine:
+    def __init__(self, device="cuda"):
+        self.device = device
+        self._loaded = set()
+        self.timer = {}
+        # Detector (baz olarak hep lazım)
+        self.detector = SCRFD()
+        # Recognizer (embedding için; referans/karşılaştırma)
+        self.recognizer = ArcFace()
+        # Opsiyonel modeller - ilk kullanımda yüklenir
+        self.age_gender = None
+        self.fairface = None
+        self.emotion = None
+        self.face_states = None
+        self.gaze = None
+        self.headpose = None
+        self.quality = None
+        self.spoofer = None
+        self.parser = None
+        self.xseg = None
+        self.landmark106 = None
+        self.facemesh = None
+        self.pipnet = None
+        self.tracker = BYTETracker()
+        self.blur = BlurFace()
+        self._references = [None] * 4      # 4 slotlu aranan kişi (embedding); None = boş
+        # --- re-ID görünüm cache'i: track_id -> son görülen embedding ---
+        self._track_embs = {}              # canlı track'lerin yüz embedding'i
+        self._last_io_ids = []             # bir önceki karedeki IoU id listesi (iç tutarlılık)
+
+    # ---- model yükleme (lazy) ----
+    def _ensure(self, name):
+        if name in self._loaded:
+            return getattr(self, name)
+        t0 = time.time()
+        if name == "age_gender":
+            self.age_gender = AgeGender()
+        elif name == "fairface":
+            self.fairface = FairFace()
+        elif name == "emotion":
+            self.emotion = Emotion()
+        elif name == "face_states":
+            self.face_states = FaceAttribNet()
+        elif name == "gaze":
+            self.gaze = MobileGaze()
+        elif name == "headpose":
+            self.headpose = HeadPose()
+        elif name == "quality":
+            self.quality = EDifFIQA()
+        elif name == "spoofer":
+            self.spoofer = MiniFASNet()
+        elif name == "parser":
+            self.parser = BiSeNet()
+        elif name == "xseg":
+            self.xseg = XSeg()
+        elif name == "landmark106":
+            self.landmark106 = Landmark106()
+        elif name == "facemesh":
+            self.facemesh = FaceMesh()
+        self._loaded.add(name)
+        self.timer[f"load_{name}"] = round(time.time() - t0, 2)
+        return getattr(self, name)
+
+    # ---- referans embedding (aranan kişi, 4 slot) ----
+    def set_reference(self, image_bgr, idx=0, max_refs=4):
+        """idx (0-3) numaralı slota kişi embedding'i yazar."""
+        if idx < 0 or idx >= max_refs:
+            raise ValueError(f"idx 0-{max_refs-1} arası olmalı")
+        faces = self.detector.detect(image_bgr)
+        if not faces:
+            raise ValueError("Referans görüntüde yüz bulunamadı")
+        face = faces[0]
+        emb = self.recognizer.get_normalized_embedding(image_bgr, face.landmarks)
+        self._references[idx] = emb
+        n = sum(1 for e in self._references if e is not None)
+        return {"idx": idx, "refs": n, "max": max_refs, "faces": len(faces), "emb_shape": list(emb.shape)}
+
+    def clear_reference(self, idx=None):
+        """idx'li slotu boşalt; idx None ise tümünü."""
+        if idx is None:
+            self._references = [None] * len(self._references)
+        else:
+            self._references[idx] = None
+        return {"refs": sum(1 for e in self._references if e is not None)}
+
+    def reset_tracking(self):
+        """Yeni bir video/akış başlangıcında izleyiciyi sıfırla (ID'ler 1'den başlar)."""
+        self.tracker.reset()
+        self._track_embs.clear()
+        self._last_io_ids = []
+
+    # ---- ana analiz ----
+    def process_image(self, image_bgr, opts, is_reference=False):
+        """
+        opts: dict of enabled features + params.
+        Returns (annotated_bgr, json_stats)
+        """
+        stats = {"faces": 0, "per_face": [], "timings": {}}
+        work = image_bgr.copy()
+
+        # 1) Detection
+        t0 = time.time()
+        faces = self.detector.detect(work)
+        stats["timings"]["detection_ms"] = round((time.time() - t0) * 1000, 1)
+        stats["faces"] = len(faces)
+        if not faces:
+            return work, stats
+
+        # 2) Recognition embedding + izleme
+        face_track_ids = None
+        if opts.get("tracking"):
+            # tracker burada sıfırlanmaz; yeni bir kaynağa başlarken reset_tracking() çağrılır.
+            # (Her karede reset, ID'leri sıfırdan başlatırdı -> kareler arası takip çalışmazdı.)
+            dets = np.array([[f.bbox[0], f.bbox[1], f.bbox[2], f.bbox[3], f.confidence] for f in faces], dtype=np.float32)
+            tracks = self.tracker.update(dets)
+            # DİKKAT: BYTETracker.update() takip edilen kutuları KENDİ sıralamasında döner
+            # (girdi dets sırasıyla hizalı DEĞİL). Bu yüzden track_id'yi yüzle IoU eşleştirmesiyle
+            # ilişkilendiriyoruz, pozisyonel indeksle değil.
+            io_ids = [None] * len(faces)
+            if len(tracks) > 0 and len(faces) > 0:
+                for row in tracks:  # row = [x1,y1,x2,y2, track_id]
+                    tid = int(row[4])
+                    tbox = row[:4]
+                    best_i, best_iou = -1, 0.0
+                    for j, f in enumerate(faces):
+                        iou = _bbox_iou(f.bbox[:4], tbox)
+                        if iou > best_iou:
+                            best_iou, best_i = iou, j
+                    if best_iou >= 0.3 and io_ids[best_i] is None:
+                        io_ids[best_i] = tid
+
+            # --- re-ID: görünüm (ArcFace embedding) ile ID stabilizasyonu ---
+            # BYTETracker saf IoU; akış hızlı/atlama-atlama karelerde aynı kişiye
+            # sürekli YENİ ID açar (22 -> 45). Burada her yüzün embedding'ini bilinen
+            # track'lerle karşılaştırıp, aynı kişi görülen eski ID'ye geri gömüyoruz.
+            face_track_ids = list(io_ids)
+            embs = []
+            for f in faces:
+                try:
+                    emb = self.recognizer.get_normalized_embedding(work, f.landmarks)
+                except Exception:
+                    emb = None
+                embs.append(emb)
+            REID_TH = 0.45
+            # 1) IoU ile güvenilir atanmış track'lerin embedding'lerini cache'e işle
+            for i, tid in enumerate(io_ids):
+                if tid is not None and embs[i] is not None:
+                    self._track_embs[tid] = embs[i]
+            # 2) YoU ile atanan (ama görünümce başka bir tanıdık track'i çağrıştıran)
+            #    yeni ID'leri, o eski track'e remap et (churn engeli)
+            for i, tid in enumerate(io_ids):
+                if tid is None or embs[i] is None:
+                    continue
+                # bu track'i cache'ten düşmeden önce en benzerini ara (kendisi hariç)
+                best_t, best_s = None, REID_TH
+                for t, e in self._track_embs.items():
+                    if t == tid:
+                        continue
+                    s = compute_similarity(embs[i], e, normalized=True)
+                    if s > best_s:
+                        best_s, best_t = s, t
+                if best_t is not None:
+                    face_track_ids[i] = best_t   # yeni id yerine eski tanıdık id
+            # 3) IoU ile ID alamayan yüzleri embedding ile tanı
+            for i in range(len(faces)):
+                if face_track_ids[i] is not None or embs[i] is None:
+                    continue
+                best_t, best_s = None, REID_TH
+                for t, e in self._track_embs.items():
+                    s = compute_similarity(embs[i], e, normalized=True)
+                    if s > best_s:
+                        best_s, best_t = s, t
+                face_track_ids[i] = best_t
+            # cache'i canlı/aktif ID'lerle sınırla (ölü/yedek BYTETracker ID büyümesini engelle):
+            # bu karede re-ID sonrası kullanılanlar + bir önceki karedeki aktifler
+            active = set(t for t in face_track_ids if t is not None)
+            active |= set(t for t in self._last_io_ids if t is not None)
+            self._track_embs = {t: e for t, e in self._track_embs.items() if t in active}
+            self._last_io_ids = io_ids
+        # face_track_ids: faces sıralamasıyla hizalı liste; her eleman track_id veya None
+
+        # 3) Parsing / XSeg (görüntü genelinde overlay) - sadece ilk yüz için basit gösterim
+        parsing_overlay = None
+
+        for i, face in enumerate(faces):
+            pf = {"idx": i, "bbox": [round(float(x), 1) for x in face.bbox], "conf": round(float(face.confidence), 3)}
+            x1, y1, x2, y2 = [int(v) for v in face.bbox[:4]]
+            x1, y1 = max(0, x1), max(0, y1)
+            crop = work[y1:y2, x1:x2]
+
+            # --- Recognition (embedding + karşılaştırma) ---
+            if opts.get("recognition"):
+                t = time.time()
+                emb = self.recognizer.get_normalized_embedding(work, face.landmarks)
+                face.embedding = emb
+                pf["emb_shape"] = list(emb.shape)
+                if any(e is not None for e in self._references):
+                    best_sim = -1.0; best_idx = -1
+                    for ri, ref in enumerate(self._references):
+                        if ref is None:
+                            continue
+                        sim = compute_similarity(ref, emb, normalized=True)
+                        if sim > best_sim:
+                            best_sim = sim; best_idx = ri
+                    pf["match_score"] = round(float(best_sim), 3)
+                    pf["match_ref"] = best_idx
+                stats["timings"]["recognition_ms"] = round((time.time() - t) * 1000, 1)
+
+            # --- Face Quality ---
+            if opts.get("quality") and face.landmarks is not None and len(face.landmarks) > 0:
+                t = time.time()
+                try:
+                    q = self._ensure("quality").predict(work, face.landmarks)
+                    pf["quality"] = round(float(q.score), 3)
+                    stats["timings"]["quality_ms"] = round((time.time() - t) * 1000, 1)
+                except Exception as e:
+                    pf["quality_err"] = str(e)
+
+            # --- Age / Sex ---
+            if opts.get("age_sex"):
+                t = time.time()
+                try:
+                    if opts.get("age_sex_model", "agegender") == "fairface":
+                        r = self._ensure("fairface").predict(work, face)
+                        pf["sex"] = r.sex; pf["age_group"] = r.age_group; pf["race"] = r.race
+                    else:
+                        r = self._ensure("age_gender").predict(work, face)
+                        pf["sex"] = r.sex; pf["age"] = r.age
+                    stats["timings"]["age_sex_ms"] = round((time.time() - t) * 1000, 1)
+                except Exception as e:
+                    pf["age_sex_err"] = str(e)
+
+            # --- Emotion ---
+            if opts.get("emotion"):
+                t = time.time()
+                try:
+                    r = self._ensure("emotion").predict(work, face)
+                    pf["emotion"] = r.emotion
+                    pf["emotion_conf"] = round(float(r.confidence), 3)
+                    stats["timings"]["emotion_ms"] = round((time.time() - t) * 1000, 1)
+                except Exception as e:
+                    pf["emotion_err"] = str(e)
+
+            # --- Face States (göz/gözlük/maske) ---
+            if opts.get("face_states"):
+                t = time.time()
+                try:
+                    r = self._ensure("face_states").predict(work, face)
+                    pf["eyeglasses"] = r.eyeglasses
+                    pf["sunglasses"] = r.sunglasses
+                    pf["mask"] = r.mask
+                    pf["left_eye_open"] = r.left_eye_open
+                    pf["right_eye_open"] = r.right_eye_open
+                    stats["timings"]["face_states_ms"] = round((time.time() - t) * 1000, 1)
+                except Exception as e:
+                    pf["face_states_err"] = str(e)
+
+            # --- Head Pose ---
+            if opts.get("headpose") and crop.size > 0:
+                t = time.time()
+                try:
+                    r = self._ensure("headpose").estimate(crop)
+                    pf["pitch"] = round(float(r.pitch), 1)
+                    pf["yaw"] = round(float(r.yaw), 1)
+                    pf["roll"] = round(float(r.roll), 1)
+                    stats["timings"]["headpose_ms"] = round((time.time() - t) * 1000, 1)
+                except Exception as e:
+                    pf["headpose_err"] = str(e)
+
+            # --- Gaze ---
+            if opts.get("gaze") and crop.size > 0:
+                t = time.time()
+                try:
+                    r = self._ensure("gaze").estimate(crop)
+                    pf["gaze_pitch"] = round(float(r.pitch), 1)
+                    pf["gaze_yaw"] = round(float(r.yaw), 1)
+                    stats["timings"]["gaze_ms"] = round((time.time() - t) * 1000, 1)
+                except Exception as e:
+                    pf["gaze_err"] = str(e)
+
+            # --- Anti-spoofing ---
+            if opts.get("spoofing"):
+                t = time.time()
+                try:
+                    r = self._ensure("spoofer").predict(work, face.bbox[:4])
+                    pf["is_real"] = bool(r.is_real)
+                    pf["spoof_conf"] = round(float(r.confidence), 3)
+                    stats["timings"]["spoofing_ms"] = round((time.time() - t) * 1000, 1)
+                except Exception as e:
+                    pf["spoofing_err"] = str(e)
+
+            # --- Dense landmarks (106) ---
+            if opts.get("landmark106"):
+                t = time.time()
+                try:
+                    lm = self._ensure("landmark106").get_landmarks(work, face.bbox[:4])
+                    pf["landmark106_n"] = int(len(lm))
+                    # çizim
+                    for x, y in lm.astype(int):
+                        cv2.circle(work, (int(x), int(y)), 2, (0, 200, 255), -1)
+                    stats["timings"]["landmark106_ms"] = round((time.time() - t) * 1000, 1)
+                except Exception as e:
+                    pf["landmark106_err"] = str(e)
+
+            # --- Face Mesh (3D, 468) ---
+            if opts.get("facemesh"):
+                t = time.time()
+                try:
+                    res = self._ensure("facemesh").predict(work, [face])
+                    if res:
+                        pts = res[0].points_2d
+                        pf["mesh_n"] = int(len(pts))
+                        draw.draw_mesh(work, pts)
+                    stats["timings"]["facemesh_ms"] = round((time.time() - t) * 1000, 1)
+                except Exception as e:
+                    pf["facemesh_err"] = str(e)
+
+            if face_track_ids is not None and face_track_ids[i] is not None:
+                pf["track_id"] = face_track_ids[i]
+            else:
+                pf["track_id"] = None
+            stats["per_face"].append(pf)
+
+        # 4) Görsel etiketler + bbox
+        for i, face in enumerate(faces):
+            x1, y1, x2, y2 = [int(v) for v in face.bbox[:4]]
+            pf = stats["per_face"][i] if i < len(stats["per_face"]) else {}
+            label_parts = []
+            if pf.get("sex") and (pf.get("age_group") or pf.get("age")):
+                label_parts.append(f"{pf.get('sex')},{pf.get('age_group') or pf.get('age')}")
+            if pf.get("emotion"):
+                label_parts.append(pf["emotion"])
+            # Yüz durumları (maske/gözlük) artık bbox altında ikonlarla gösteriliyor;
+            # üst etikette tekrarlanmasına gerek yok.
+            if pf.get("is_real") is not None:
+                label_parts.append("GERCEK" if pf["is_real"] else "SAHTE!")
+            if pf.get("match_score") is not None:
+                label_parts.append(f"eslesme={pf['match_score']:.2f}")
+            if pf.get("track_id") is not None:
+                label_parts.append(f"#{pf['track_id']}")
+            label = " ".join(label_parts)
+            # Kutu rengi: aranan kişiyle eşleşme (>0.5) = MAVİ; yoksa cinsiyet: Kadın yeşil, Erkek kırmızı
+            ms = pf.get("match_score")
+            is_match = ms is not None and ms > 0.5
+            if is_match:
+                box_color = (255, 140, 0)  # BGR parlak mavi
+            elif pf.get("sex") == "Male":
+                box_color = (0, 0, 255)   # BGR kırmızı
+            else:
+                box_color = (0, 200, 0)   # BGR yeşil
+            cv2.rectangle(work, (x1, y1), (x2, y2), box_color, 3 if is_match else 2)
+            if label:
+                draw.draw_text_label(work, label, x1, y1 - 4, bg_color=(40, 80, 40), font_scale=0.55)
+            # Baş duruşu (x,y,z eksen okları) ve Bakış yönü oku — yüz merkezinden
+            cx = (x1 + x2) // 2
+            cy = (y1 + y2) // 2
+            face_w = max(1, x2 - x1)
+            if pf.get("pitch") is not None and pf.get("yaw") is not None and pf.get("roll") is not None:
+                _draw_pose_axes(work, cx, cy, int(face_w * 0.55),
+                                pf["yaw"], pf["pitch"], pf["roll"])
+            if pf.get("gaze_pitch") is not None and pf.get("gaze_yaw") is not None:
+                _draw_gaze_arrow(work, cx, cy, int(face_w * 0.8),
+                                 pf["gaze_yaw"], pf["gaze_pitch"])
+            # --- Yüz Durumları: alt alta küçük font, yeşil ✓ / kırmızı ✗ ---
+            # cv2 putText Heshey fontu ✓/✗ glifini çizmez; ikonu elle çiziyoruz.
+            state_keys = [("eyeglasses", "gozluk"), ("sunglasses", "gunluk"),
+                          ("mask", "maske"), ("left_eye_open", "sol goz"),
+                          ("right_eye_open", "sag goz")]
+            present = [k for k, _ in state_keys if k in pf]
+            if present:
+                H, W = work.shape[:2]
+                panel_h = len(present) * 16 + 6
+                # alt taşarsa kutu üstüne, yoksa altına yerleştir
+                if y2 + panel_h > H:
+                    row = y1 - 10 - 16 * (len(present) - 1)
+                else:
+                    row = y2 + 14
+                for k, lab in state_keys:
+                    if k not in pf:
+                        continue
+                    # FaceAttribNet olasılık (float) döner; 0.5 üstü = var/açık
+                    val = bool(pf[k] > 0.5)
+                    col = (0, 255, 0) if val else (0, 0, 255)  # BGR: yeşil / kırmızı
+                    ix, iy = x1 + 4, row
+                    if val:  # ✓ onay (iki çizgi)
+                        cv2.line(work, (ix, iy), (ix + 4, iy + 4), col, 2)
+                        cv2.line(work, (ix + 4, iy + 4), (ix + 10, iy - 4), col, 2)
+                    else:    # ✗ çarpı (iki çapraz çizgi)
+                        cv2.line(work, (ix, iy - 5), (ix + 10, iy + 5), col, 2)
+                        cv2.line(work, (ix, iy + 5), (ix + 10, iy - 5), col, 2)
+                    cv2.putText(work, lab, (ix + 16, iy + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.45, col, 1, cv2.LINE_AA)
+                    row += 16
+
+        # 5) Parsing overlay (opsiyonel, görüntü geneli)
+        if opts.get("parsing") and faces:
+            try:
+                parser = self._ensure("parser")
+                # ilk yüzün bbox'ını büyüterek yüz bölgesi
+                fx1, fy1, fx2, fy2 = [int(v) for v in faces[0].bbox[:4]]
+                pad = 60
+                fx1, fy1 = max(0, fx1 - pad), max(0, fy1 - pad)
+                fx2, fy2 = min(work.shape[1], fx2 + pad), min(work.shape[0], fy2 + pad)
+                crop = work[fy1:fy2, fx1:fx2]
+                if crop.size > 0:
+                    mask = parser.parse(crop)
+                    vis = draw.vis_parsing_maps(crop, mask)
+                    work[fy1:fy2, fx1:fx2] = vis
+                    stats["timings"]["parsing_ms"] = 1
+            except Exception as e:
+                stats["parsing_err"] = str(e)
+
+        # 6) Anonimleştirme: yüz bölgelerini bulanıklaştır (resim + video + MP4 her yolunda)
+        if opts.get("blur"):
+            try:
+                self.blur.anonymize(work, faces, inplace=True)
+                stats["blurred"] = True
+            except Exception as e:
+                stats["blur_err"] = str(e)
+
+        return work, stats
+
+    # ---- Anonimleştirme (ayrı, resmi değiştirir) ----
+    def anonymize(self, image_bgr):
+        faces = self.detector.detect(image_bgr)
+        if faces:
+            self.blur.anonymize(image_bgr, faces, inplace=True)
+        return image_bgr
+
+
+def make_engine():
+    return UnifaceEngine(device="cuda")
+
+
+if __name__ == "__main__":
+    eng = make_engine()
+    print("Engine hazir. Modeller yükleniyor...")
+    eng._ensure("age_gender")
+    print("age_gender", eng.timer)

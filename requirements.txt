@@ -1,0 +1,8 @@
+flask>=3.0
+numpy
+opencv-python
+onnxruntime-gpu>=1.17
+uniface==4.0.0
+yt-dlp
+requests
+pillow
