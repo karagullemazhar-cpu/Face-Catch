@@ -4,19 +4,22 @@ Real-time face analysis web app built with **Flask + OpenCV + ONNX** ([uniface](
 
 ![Demo](demo.png)
 
-Runs the full pipeline on **images, video files, YouTube streams and live webcam**, with an H.264 MP4 export of the analyzed result.
+Runs the full pipeline on **images, video files, YouTube/Dailymotion streams and live webcam**, with an H.264 MP4 export of the analyzed result.
 
 ## Features
 
-- Face detection & recognition (matching against a "wanted person" reference photo)
+- Face detection & recognition (matching against a "wanted person" reference)
+  - **Wanted person: 2×2 biometric passport grid** — 4 slots in passport/biometric 35×45 ratio, white background, face-centered crop (`object-position: center 18%`), numbered `1/4` badges, high-contrast card look
 - Age / gender, emotion, face quality estimation
 - Anti-spoofing (liveness)
-- Head pose & gaze direction
+- Head pose & gaze direction — high-contrast 3D axes (black outline + color fill, angle labels) and thick gaze ray
 - 106-point landmarks, 3D face mesh, face parsing (segmentation)
-- Multi-face tracking (BYTETracker)
+- Multi-face tracking (BYTETracker, adaptive threshold)
 - Anonymization (face blur) — toggleable
-- Live MJPEG stream, on-the-fly feature toggles, per-stage speed stats (ms)
-- MP4 export (H.264, faststart) with playable preview
+- Live MJPEG stream with on-the-fly feature toggles and per-stage speed stats (ms)
+- Streams: **YouTube and Dailymotion** via `yt-dlp` (Dailymotion uses an `ffmpeg` pipe for clean EOF handling)
+- **Analyzed MP4 export** (H.264, faststart) with seek/drag and playback speed 0.25×–4×; duration `0` = whole video (live capped at 10 min)
+- Original-speed playback toggle for live streams (on by default)
 
 ## Quickstart
 
@@ -57,6 +60,10 @@ openssl req -x509 -newkey rsa:2048 -keyout certs/key.pem -out certs/cert.pem \
 |---|---|---|
 | `UNIFACE_HOST` | `127.0.0.1` | Bind address (`0.0.0.0` for LAN) |
 | `UNIFACE_VENV` | *(auto-detected)* | venv path used to locate CUDA libs for ONNX Runtime |
+
+## Changelog
+
+- **2026-08-21** — Wanted person switched to **2×2 biometric passport grid** (35×45, white background, centered crop), result/MP4 views contained and centered (`object-fit: contain`, `max-height: min(68vh,720px)`), stream auto-stop and Dailymotion `ffmpeg` pipe support, high-contrast pose/gaze overlays, original-speed playback enabled by default.
 
 ## Notes
 

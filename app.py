@@ -37,7 +37,7 @@ LIVE_OPTS = {
     "headpose": True, "gaze": True, "quality": True, "spoofing": True,
     "landmark106": False, "facemesh": False, "tracking": False,
     "parsing": False, "blur": False, "age_sex_model": "agegender",
-    "ori_speed": False,
+    "ori_speed": True,
 }
 
 def default_opts():
@@ -208,22 +208,32 @@ def _open_capture(src_kind, src):
         if not cap.isOpened():
             raise RuntimeError(f"dosya açılamadı: {safe_name}")
         return cap, real
-    # YouTube URL - yt-dlp ile akışı çöz, sonra cv2 ile aç
+    # YouTube/Dailymotion URL - yt-dlp ile akışı çöz, sonra OpenCV veya ffmpeg ile aç
     import subprocess, re
-    # ponytail: SSRF mitigation — allow only YouTube domains
-    YT_RE = re.compile(r'^(https?://)?(www\.)?(youtube\.com|youtu\.be|m\.youtube\.com)/', re.I)
+    # SSRF mitigation — allow YouTube + Dailymotion (yt-dlp supports both)
+    YT_RE = re.compile(r'^(https?://)?(www\.)?(youtube\.com|youtu\.be|m\.youtube\.com|dailymotion\.com|www\.dailymotion\.com|dai\.ly)/', re.I)
     if not YT_RE.match(str(src) or ''):
-        raise RuntimeError("desteklenen yalnızca YouTube URL'leri")
+        raise RuntimeError("desteklenen yalnızca YouTube ve Dailymotion URL'leri")
     try:
-        # player_client=android 403'ü aşar (diğer client'lar bu ağda engelli)
-        cmd = ["yt-dlp", "-f", "b[height<=720][vcodec!=av01]", "-g", "--no-warnings",
-               "--extractor-args", "youtube:player_client=android", src]
+        is_yt = "youtu" in str(src).lower()
+        if is_yt:
+            cmd = ["yt-dlp", "-f", "b[height<=720][vcodec!=av01]", "-g", "--no-warnings",
+                   "--extractor-args", "youtube:player_client=android", src]
+        else:
+            cmd = ["yt-dlp", "-f", "b[height<=720]", "-g", "--no-warnings", src]
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
         url = (r.stdout or "").strip().splitlines()
         if not url:
             raise RuntimeError(f"yt-dlp akış bulamadı: {r.stderr[:200]}")
         stream_url = url[0]
         print("[yt] stream:", stream_url[:80], "...")
+        # Dailymotion VOD'da cv2.VideoCapture(m3u8) EOF'ta temiz kapanmiyor (son kare donuyor),
+        # bu yuzden Dailymotion icin dogrudan ffmpeg pipe kullan -> bitince stdout kapanir, gen_frames break eder.
+        if not is_yt:
+            cmd2 = ["ffmpeg", "-i", stream_url, "-f", "image2pipe", "-vcodec", "mjpeg",
+                    "-preset", "ultrafast", "-q:v", "4", "pipe:1"]
+            proc = subprocess.Popen(cmd2, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+            return FfmpegPipe(proc), stream_url
         cap = cv2.VideoCapture(stream_url)
         if cap.isOpened():
             return cap, stream_url
@@ -343,9 +353,9 @@ def stream():
             src = safe_name
     if src_kind == "yt":
         import re
-        YT_RE = re.compile(r'^(https?://)?(www\.)?(youtube\.com|youtu\.be|m\.youtube\.com)/', re.I)
+        YT_RE = re.compile(r'^(https?://)?(www\.)?(youtube\.com|youtu\.be|m\.youtube\.com|dailymotion\.com|www\.dailymotion\.com|dai\.ly)/', re.I)
         if not src or not YT_RE.match(src):
-            return jsonify({"error": "geçersiz YouTube URL"}), 400
+            return jsonify({"error": "geçersiz YouTube/Dailymotion URL"}), 400
     return Response(gen_frames(src_kind, src, None),
                     mimetype="multipart/x-mixed-replace; boundary=frame")
 
@@ -550,9 +560,9 @@ def video_out_start():
             return jsonify({"error": "geçersiz dosya adı"}), 400
     if src_kind == "yt":
         import re
-        YT_RE = re.compile(r'^(https?://)?(www\.)?(youtube\.com|youtu\.be|m\.youtube\.com)/', re.I)
+        YT_RE = re.compile(r'^(https?://)?(www\.)?(youtube\.com|youtu\.be|m\.youtube\.com|dailymotion\.com|www\.dailymotion\.com|dai\.ly)/', re.I)
         if not src or not YT_RE.match(src):
-            return jsonify({"error": "YouTube URL gerekli"}), 400
+            return jsonify({"error": "YouTube/Dailymotion URL gerekli"}), 400
     if src_kind == "yt" and not src:
         return jsonify({"error": "YouTube URL gerekli"}), 400
     try:

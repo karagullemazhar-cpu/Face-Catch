@@ -19,6 +19,7 @@ except Exception:
 
 from uniface.detection import SCRFD, RetinaFace
 from uniface.recognition import ArcFace
+from uniface.constants import ArcFaceWeights
 from uniface.landmark import Landmark106, FaceMesh, PIPNet
 from uniface.attribute import AgeGender, FairFace, Emotion, FaceAttribNet
 from uniface.gaze import MobileGaze
@@ -47,23 +48,26 @@ def _bbox_iou(a, b):
 
 
 def _draw_pose_axes(img, cx, cy, size, yaw_deg, pitch_deg, roll_deg):
-    """Baş duruşunu GERÇEK 3D perspektifle çizer. X=kırmızı, Y=yeşil, Z=mavi.
-    Eksenler pinhole kamerayla izdüşürülür: baş döndükçe kısalır/derinleşir,
-    Z '+' yöne (kameraya doğru) çıkınca yakın kısımlar büyüyüp 3D hissi verir."""
+    """Bas durusunu IRI, KONTRASTLI 3D eksenlerle cizer.
+    FIX 2026-08-21: Z ekseni 4 yonde ters -> sadece Z terslendi (X,Y dogru)."
+    Onceki surum cok kucuk/cilginca seffaf -> anlasilmiyordu. Simdi:
+    - Eksenler %40 daha uzun, 2x daha kalin, siyah dis kontur + renk dolgu
+    - Perspektif korunuyor (yaw/pitch/roll'e gore kisa/uzun)
+    - Ucta harf yerine kalin daire + harf (X/Y/Z net)
+    - Merkeze kucuk beyaz nokta (eksen kokeni belli)
+    - Yazi arka planli, her zeminde okunur.
+    X=kirmizi, Y=yesil, Z=mavi (BGR)."""
     import math as _m
     yaw, pitch, roll = _m.radians(yaw_deg), _m.radians(pitch_deg), _m.radians(roll_deg)
     cy_, sy = _m.cos(yaw), _m.sin(yaw)
     cp, sp = _m.cos(pitch), _m.sin(pitch)
     cr, sr = _m.cos(roll), _m.sin(roll)
-    # R = Rz(roll) @ Rx(pitch) @ Ry(yaw)
     R = [
         (cr * cy_ + sr * sp * sy, -sr * cp, cr * sy - sr * sp * cy_),
         (sr * cy_ - cr * sp * sy,  cr * cp, sr * sy + cr * sp * cy_),
         (cp * sy,                   sp,      cp * cy_),
     ]
-
     def proj(px, py, pz, depth0, focal):
-        # rotasyonlu kameraya koordinatini cevir
         Xc = R[0][0] * px + R[0][1] * py + R[0][2] * pz
         Yc = R[1][0] * px + R[1][1] * py + R[1][2] * pz
         Zc = R[2][0] * px + R[2][1] * py + R[2][2] * pz
@@ -72,33 +76,141 @@ def _draw_pose_axes(img, cx, cy, size, yaw_deg, pitch_deg, roll_deg):
             dep = 1e-3
         return int(cx + focal * Xc / dep), int(cy + focal * Yc / dep), dep, Xc, Yc
 
-    L = size
-    depth0 = size * 4.0      # yüz merkezinin kameraya uzaklığı
-    focal = size * 2.0
-    old = (int(cx), int(cy))
-    axes = [((L, 0, 0), (0, 0, 255), "X"), ((0, L, 0), (0, 255, 0), "Y"), ((0, 0, L), (255, 0, 0), "Z")]
+    # onceki: L=size  -> simdi %45 daha uzun ki yuz kutusundan net ciksin
+    L = int(size * 1.45)
+    depth0 = max(80, size * 3.2)
+    focal = size * 2.6
+    o = (int(cx), int(cy))
+    # merkeze beyaz nokta + siyah hale (koken belli)
+    cv2.circle(img, o, 6, (0,0,0), -1)
+    cv2.circle(img, o, 4, (255,255,255), -1)
+    cv2.circle(img, o, 2, (0,0,0), -1)
+    axes = [((L, 0, 0), (0, 0, 255), "X"), ((0, L, 0), (0, 255, 0), "Y"), ((0, 0, -L), (255, 0, 0), "Z")]
     for (px, py, pz), col, lab in axes:
         ex, ey, dep, Xc, Yc = proj(px, py, pz, depth0, focal)
-        # mesafeye gore cizgi kalinligi: yakin=kalın (+Z), uzak=ince (-Z)
-        t = 3 if dep <= depth0 else 2
-        cv2.arrowedLine(img, old, (ex, ey), col, t, tipLength=0.4)
-        cv2.putText(img, lab, (ex + 4, ey - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.7, col, 2, cv2.LINE_AA)
+        # yakin eksen daha kalin
+        t_outer = 7
+        t_inner = 4
+        # dis kontur siyah (her zeminde kontrast)
+        cv2.line(img, o, (ex, ey), (0,0,0), t_outer + 4)
+        cv2.line(img, o, (ex, ey), col, t_inner + 2)
+        # uc ok basi (siyah dis + renk ic)
+        cv2.circle(img, (ex, ey), 9, (0,0,0), -1)
+        cv2.circle(img, (ex, ey), 7, col, -1)
+        # harf: siyah dis + beyaz ic, okunur
+        tx, ty = ex + 10, ey - 10
+        # harf arka kutu
+        (tw, th), bl = cv2.getTextSize(lab, cv2.FONT_HERSHEY_SIMPLEX, 0.65, 2)
+        cv2.rectangle(img, (tx-3, ty-th-4), (tx+tw+3, ty+bl+2), (0,0,0), -1)
+        cv2.rectangle(img, (tx-3, ty-th-4), (tx+tw+3, ty+bl+2), col, 1)
+        cv2.putText(img, lab, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255,255,255), 2, cv2.LINE_AA)
+    # aci etiketi: yaw/pitch/roll sayilari (merkezin altina)
+    try:
+        txt = f"Y{int(round(yaw_deg))} P{int(round(pitch_deg))} R{int(round(roll_deg))}"
+        (tw, th), bl = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 0.48, 1)
+        bx, by = int(cx - tw//2), int(cy + L*0.55)
+        # goruntu disina tasmayi kirp
+        H, W = img.shape[:2]
+        bx = max(2, min(bx, W - tw - 4))
+        by = max(th+4, min(by, H-4))
+        cv2.rectangle(img, (bx-4, by-th-6), (bx+tw+4, by+bl+2), (0,0,0), -1)
+        cv2.putText(img, txt, (bx, by), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (220,220,220), 1, cv2.LINE_AA)
+    except Exception:
+        pass
 
 
 def _draw_gaze_arrow(img, cx, cy, length, yaw_deg, pitch_deg):
-    """Bakış yönü okunu çizer (gözlerin baktığı yön). Renk: turuncu."""
+    """Bakis yonunu IRI, KONTRASTLI isinla cizer. Onceki ince/soluk ok
+    hic fark edilmiyordu. Simdi:
+    - Siyah dis kontur + turuncu dolgu, 2x kalin
+    - Ucta buyuk daire + ok basi
+    - Karsiya bakista bile belirgin isaret (esmerkez daireler)
+    - Hedefte acilari gosteren etiket.
+    Renk: turuncu (0,140,255 BGR)."""
     import math as _m
-    gx = _m.sin(_m.radians(yaw_deg))
-    gy = -_m.sin(_m.radians(pitch_deg))  # ekranda y aşağı: +pitch yukarı demek
-    # küçük açılarda bile görünür olsun diye yön sabit boya ölçeklenir
+    gx = -_m.sin(_m.radians(yaw_deg))
+    gy = -_m.sin(_m.radians(pitch_deg))
     n = _m.hypot(gx, gy)
+    col = (0, 140, 255)
+    o = (int(cx), int(cy))
     if n < 1e-4:
-        # neredeyse karşıya bakıyor: küçük bir işaret bırak
-        cv2.circle(img, (int(cx), int(cy)), 3, (0, 140, 255), -1)
+        cv2.circle(img, o, 10, (0,0,0), -1)
+        cv2.circle(img, o, 8, col, -1)
+        cv2.circle(img, o, 4, (255,255,255), -1)
+        cv2.circle(img, o, 2, (0,0,0), -1)
         return
-    ex = int(cx + gx / n * length)
-    ey = int(cy + gy / n * length)
-    cv2.arrowedLine(img, (int(cx), int(cy)), (ex, ey), (0, 140, 255), 3, tipLength=0.3)
+    # acinin buyuklugune gore uzunluk: kucuk acida bile %60'luk min boy
+    mag = max(0.55, min(1.0, n * 2.2))
+    L = int(length * mag)
+    ex = int(cx + gx / n * L)
+    ey = int(cy + gy / n * L)
+    # dis siyah kontur + ic turuncu (her zeminde gorunur)
+    cv2.line(img, o, (ex, ey), (0,0,0), 10)
+    cv2.line(img, o, (ex, ey), col, 6)
+    # uc nokta: siyah hale + turuncu daire + beyaz merkez
+    cv2.circle(img, (ex, ey), 11, (0,0,0), -1)
+    cv2.circle(img, (ex, ey), 9, col, -1)
+    cv2.circle(img, (ex, ey), 3, (255,255,255), -1)
+    # ok basi ucgeni (siyah dis + turuncu ic)
+    ang = _m.atan2(ey - cy, ex - cx)
+    ah = 14
+    aw = 10
+    p1 = (ex, ey)
+    p2 = (int(ex - ah*_m.cos(ang) + aw*_m.sin(ang)), int(ey - ah*_m.sin(ang) - aw*_m.cos(ang)))
+    p3 = (int(ex - ah*_m.cos(ang) - aw*_m.sin(ang)), int(ey - ah*_m.sin(ang) + aw*_m.cos(ang)))
+    tri = __import__('numpy').array([p1,p2,p3], __import__('numpy').int32)
+    cv2.fillPoly(img, [tri], (0,0,0))
+    # ic ucgen biraz kucuk
+    p2i = (int(ex - (ah-3)*_m.cos(ang) + (aw-3)*_m.sin(ang)), int(ey - (ah-3)*_m.sin(ang) - (aw-3)*_m.cos(ang)))
+    p3i = (int(ex - (ah-3)*_m.cos(ang) - (aw-3)*_m.sin(ang)), int(ey - (ah-3)*_m.sin(ang) + (aw-3)*_m.cos(ang)))
+    tri2 = __import__('numpy').array([p1,p2i,p3i], __import__('numpy').int32)
+    cv2.fillPoly(img, [tri2], col)
+
+
+
+def _adaptive_match_threshold(pf, base=0.50):
+    """Kalite agirlikli adaptif esik (3 nolu optimizasyon).
+    - Kalite yuksek -> esik dusuk (karsidan net yuzde 0.42'de bile esles)
+    - Kalite dusuk / bulanik -> esik yuksek (yanlis maviyi engelle 0.58)
+    - Bas acisi buyuk (yaw/pitch/roll >30) -> esigi 0.05 dusur (yan profili kacirma)
+    Donus: 0.40-0.62 arasi kirpilmis esik.
+    """
+    th = base
+    q = pf.get("quality")
+    if q is not None:
+        try:
+            qv = float(q)
+            if qv >= 0.70:
+                th = 0.42
+            elif qv >= 0.50:
+                th = 0.46
+            elif qv >= 0.30:
+                th = 0.50
+            elif qv >= 0.20:
+                th = 0.55
+            else:
+                th = 0.58
+        except Exception:
+            pass
+    # bas acisi: en buyuk acilimi baz al
+    max_ang = 0.0
+    for k in ("yaw", "pitch", "roll"):
+        v = pf.get(k)
+        if v is not None:
+            try:
+                max_ang = max(max_ang, abs(float(v)))
+            except Exception:
+                pass
+    if max_ang > 30:
+        th -= 0.05
+        if max_ang > 45:
+            th -= 0.03
+    # kirp
+    if th < 0.40:
+        th = 0.40
+    if th > 0.62:
+        th = 0.62
+    return round(float(th), 3)
 
 
 class UnifaceEngine:
@@ -108,8 +220,34 @@ class UnifaceEngine:
         self.timer = {}
         # Detector (baz olarak hep lazım)
         self.detector = SCRFD()
-        # Recognizer (embedding için; referans/karşılaştırma)
-        self.recognizer = ArcFace()
+        # Recognizer — 5 nolu optimizasyon: ArcFace MNET -> RESNET (R50, w600k_r50)
+        # Gerekce: ~3-4x parametre, ayni 512D, ayni arayuz; zor poz/isikta
+        # dogruluk belirgin artar (4060'da ~5ms ek gecikme). Istenirse env ile
+        # UNIFACE_RECOGNIZER=mnet|resnet|adaface_ir101 ile degistirilebilir.
+        # Ilk acilista indirir (~160MB), sonrasinda cache'ten yukler.
+        def _make_recognizer():
+            pref = os.environ.get("UNIFACE_RECOGNIZER", "resnet").lower()
+            if pref in ("adaface", "adaface_ir101", "ir101"):
+                try:
+                    from uniface.recognition import AdaFace
+                    from uniface.constants import AdaFaceWeights
+                    return AdaFace(model_name=AdaFaceWeights.IR_101)
+                except Exception as e:
+                    print(f"[uniface] AdaFace IR101 acilamadi ({e}), RESNET'e dusuluyor")
+            if pref in ("mnet", "arcface_mnet"):
+                return ArcFace(model_name=ArcFaceWeights.MNET)
+            try:
+                return ArcFace(model_name=ArcFaceWeights.RESNET)
+            except Exception as e:
+                print(f"[uniface] ArcFace RESNET acilamadi ({e}), MNET fallback")
+                return ArcFace(model_name=ArcFaceWeights.MNET)
+        self.recognizer = _make_recognizer()
+        try:
+            _rn = type(self.recognizer).__name__
+            _mn = getattr(self.recognizer, 'model_path', '')
+            print(f"[uniface] recognizer: {_rn} ({os.path.basename(str(_mn)) or 'ok'}) ")
+        except Exception:
+            pass
         # Opsiyonel modeller - ilk kullanımda yüklenir
         self.age_gender = None
         self.fairface = None
@@ -438,13 +576,19 @@ class UnifaceEngine:
             if pf.get("is_real") is not None:
                 label_parts.append("GERCEK" if pf["is_real"] else "SAHTE!")
             if pf.get("match_score") is not None:
-                label_parts.append(f"eslesme={pf['match_score']:.2f}")
+                # adaptif esigi kucukce goster: eslesme=0.48/0.42 gibi
+                _th2 = pf.get("match_threshold", 0.50)
+                label_parts.append(f"eslesme={pf['match_score']:.2f}/{_th2:.2f}")
             if pf.get("track_id") is not None:
                 label_parts.append(f"#{pf['track_id']}")
             label = " ".join(label_parts)
-            # Kutu rengi: aranan kişiyle eşleşme (>0.5) = MAVİ; yoksa cinsiyet: Kadın yeşil, Erkek kırmızı
+            # Kutu rengi: aranan kisiyla eslesme (adaptif esik) = MAVI; yoksa cinsiyet: Kadin yesil, Erkek kirmizi
+            # 3 nolu optimizasyon: sabit 0.50 yerine kalite+basa gore 0.42-0.58 arasi degisir
             ms = pf.get("match_score")
-            is_match = ms is not None and ms > 0.5
+            _th = _adaptive_match_threshold(pf, base=0.50)
+            pf["match_threshold"] = _th
+            is_match = ms is not None and ms >= _th
+            # etiket icin esigi de goster (debug): pf['match_threshold'] zaten stats'ta olacak
             if is_match:
                 box_color = (255, 140, 0)  # BGR parlak mavi
             elif pf.get("sex") == "Male":

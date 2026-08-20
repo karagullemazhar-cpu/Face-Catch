@@ -123,20 +123,25 @@ input[type=file]::file-selector-button{
 .radio-line{display:flex;align-items:center;gap:7px;margin:3px 0 2px 6px;font-size:12px;color:var(--muted);cursor:pointer}
 .radio-line input{accent-color:var(--acc)}
 .radio-line.checked{color:var(--txt)}
-/* --- aranan kişi --- */
-.refgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
-.refslot{position:relative;aspect-ratio:1;border:1px solid var(--line);border-radius:11px;overflow:hidden;background:var(--bg2);min-height:62px;transition:.15s}
-.refslot.empty{border-style:dashed;cursor:pointer}
-.refslot.empty:hover{border-color:var(--acc);background:rgba(56,189,248,.05)}
-.refplus{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:26px;color:var(--dim);font-weight:300}
+/* --- aranan kişi — vesikalık/biyometrik 35×45, 2×2 --- */
+.refgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.refslot{position:relative;aspect-ratio:35/45;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#ffffff;transition:.15s;box-shadow:0 1px 10px rgba(0,0,0,.18)}
+.refslot.empty{border-style:dashed;cursor:pointer;background:var(--bg2);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:8px;min-height:0}
+.refslot.empty:hover{border-color:var(--acc);background:rgba(56,189,248,.06)}
+.refplus{width:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:var(--dim);text-align:center}
+.refplus .ph{width:46px;height:56px;border-radius:7px;border:1px dashed var(--line2);display:flex;align-items:center;justify-content:center;font-size:22px;background:rgba(255,255,255,.03);line-height:1}
+.refplus .lbl{font-size:10px;font-weight:600;letter-spacing:.04em;color:var(--dim);line-height:1.3}
 .refslot.empty:hover .refplus{color:var(--acc)}
-.refthumb{width:100%;height:100%;object-fit:cover;display:block}
-.refacts{position:absolute;top:4px;right:4px;display:flex;gap:4px;opacity:0;transition:.15s}
+.refslot.empty:hover .refplus .ph{border-color:var(--acc);color:var(--acc)}
+.refslot.empty:hover .refplus .lbl{color:var(--acc)}
+.refthumb{width:100%;height:100%;object-fit:cover;object-position:center 18%;background:#ffffff;display:block}
+.refidx{position:absolute;left:6px;top:6px;font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.06em;color:#0b1220;background:rgba(255,255,255,.92);border:1px solid rgba(0,0,0,.08);padding:2px 5px;border-radius:999px;line-height:1}
+.refacts{position:absolute;top:3px;right:3px;display:flex;gap:3px;opacity:0;transition:.15s}
 .refslot:hover .refacts{opacity:1}
-.refacts button{width:24px;height:24px;padding:0;font-size:13px;border-radius:6px;background:rgba(0,0,0,.6);color:#fff;border:1px solid rgba(255,255,255,.14);cursor:pointer;backdrop-filter:blur(4px)}
+.refacts button{width:20px;height:20px;padding:0;font-size:11px;border-radius:5px;background:rgba(0,0,0,.6);color:#fff;border:1px solid rgba(255,255,255,.14);cursor:pointer;backdrop-filter:blur(4px)}
 .refacts button.del{color:var(--red)}
 .refacts button.del:hover{background:rgba(251,113,133,.15)}
-.reftime{font-family:var(--mono);font-size:11px;color:var(--green);margin-top:9px;min-height:15px}
+.reftime{font-family:var(--mono);font-size:10px;color:var(--green);margin-left:auto}
 /* --- butonlar --- */
 .btns{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:16px}
 .btn{
@@ -152,8 +157,8 @@ input[type=file]::file-selector-button{
 .btn-danger:hover:not(:disabled){background:rgba(251,113,133,.16)}
 /* --- sonuç --- */
 .result{min-height:420px}
-.view{position:relative}
-.view img{width:100%;border-radius:10px;display:block;background:#000}
+.view{position:relative;background:#000;border-radius:10px;overflow:hidden;max-height:min(68vh,720px);display:flex;align-items:center;justify-content:center}
+.view img{width:auto;height:auto;max-width:100%;max-height:min(68vh,720px);object-fit:contain;border-radius:10px;display:block;background:#000}
 .overlay-tag{
   position:absolute;top:12px;left:12px;display:inline-flex;align-items:center;gap:7px;
   background:rgba(10,14,20,.72);border:1px solid var(--line2);border-radius:999px;
@@ -214,7 +219,9 @@ input[type=file]::file-selector-button{
 .mp4rates button.sel{background:var(--acc);color:#04121a;border-color:var(--acc)}
 .mp4dl{font-size:12px;color:var(--acc);text-decoration:none;border:1px solid var(--line2);padding:4px 10px;border-radius:7px;font-weight:600}
 .mp4dl:hover{border-color:var(--acc)}
-#mp4Video{width:100%;display:block;background:#000;max-height:72vh}
+#mp4Video{width:auto;height:auto;max-width:100%;max-height:min(68vh,720px);object-fit:contain;display:block;background:#000;margin:0 auto}
+#speedBox{margin-top:14px}
+#statsTable{margin-top:12px}
 .mp4meta{padding:7px 14px;font-family:var(--mono);font-size:11px;color:var(--dim);border-top:1px solid var(--line)}
 .mp4barwrap{width:100%;max-width:420px;height:8px;border-radius:99px;background:var(--panel2);border:1px solid var(--line);overflow:hidden;margin:10px auto}
 .mp4bar{height:100%;width:0%;background:linear-gradient(90deg,var(--acc),var(--acc2));transition:width .4s}
@@ -287,7 +294,7 @@ input[type=file]::file-selector-button{
             <label class="f"><input type="checkbox" id="blur"><span data-i18n="fBlur">Anonimleştir</span></label>
           </div>
           <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
-            <label class="f"><input type="checkbox" id="ori_speed"><span data-i18n="oriSpeed">Orijinal Hızda Oynat (canlı akış)</span></label>
+            <label class="f on"><input type="checkbox" id="ori_speed" checked><span data-i18n="oriSpeed">Orijinal Hızda Oynat (canlı akış)</span></label>
           </div>
           <div style="margin-top:10px">
             <div class="radio-line checked" id="r1"><input type="radio" name="agesex" id="as_agegender" checked><span>AgeGender</span></div>
@@ -298,10 +305,9 @@ input[type=file]::file-selector-button{
 
       <!-- aranan kişi -->
       <div class="card mt">
-        <div class="card-h"><span class="ic">◈</span><h2 data-i18n="refTitle">Aranan Kişi</h2></div>
-        <div class="card-b">
+        <div class="card-h"><span class="ic">◈</span><h2 data-i18n="refTitle">Aranan Kişi</h2><span class="reftime" id="refInfo" style="margin-left:auto">0/4</span></div>
+        <div class="card-b" style="padding:8px 10px">
           <div class="refgrid" id="refGrid"></div>
-          <div class="reftime" id="refInfo">0/4</div>
         </div>
       </div>
 
@@ -366,6 +372,7 @@ const $ = id => document.getElementById(id);
 let currentSrc = 'img';
 let uploadedVideo = null;
 let streamActive = false;
+let streamEndedTimer=null;
 const MAX_REFS = 4;
 const refSlots = [];   // {imgData}
 
@@ -487,8 +494,10 @@ function renderRefGrid(){
   for(let i=0;i<MAX_REFS;i++){
     const s=refSlots[i]; const d=document.createElement('div');
     d.className='refslot'+(s?'':' empty');
+    d.onclick=()=>{ if(!s){ pendingIdx=i; refInput.click(); } };
     if(s){
-      const im=document.createElement('img'); im.src=s.imgData; im.className='refthumb'; d.appendChild(im);
+      const im=document.createElement('img'); im.src=s.imgData; im.className='refthumb'; im.alt='vesikalık '+(i+1); d.appendChild(im);
+      const idx=document.createElement('span'); idx.className='refidx'; idx.textContent=(i+1)+'/4'; d.appendChild(idx);
       const a=document.createElement('div'); a.className='refacts';
       const chg=document.createElement('button'); chg.textContent='↻'; chg.title=I18N[LANG].degistir;
       chg.onclick=(ev)=>{ev.stopPropagation();pendingIdx=i;refInput.click();};
@@ -496,8 +505,9 @@ function renderRefGrid(){
       del.onclick=async(ev)=>{ev.stopPropagation();await fetch('/api/clear_reference',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'idx='+i});refSlots[i]=null;renderRefGrid();autoAnalyze();};
       a.appendChild(chg);a.appendChild(del);d.appendChild(a);
     } else {
-      const p=document.createElement('div'); p.className='refplus'; p.textContent='+'; p.title=I18N[LANG].yuzEkle;
-      p.onclick=()=>{pendingIdx=i;refInput.click();}; d.appendChild(p);
+      const p=document.createElement('div'); p.className='refplus'; p.title=I18N[LANG].yuzEkle;
+      p.innerHTML='<span class="ph">◫</span><span class="lbl">'+I18N[LANG].yuzEkle+'</span>';
+      d.appendChild(p);
     }
     grid.appendChild(d);
   }
@@ -627,7 +637,11 @@ function startStream(){
   const st=$('resVideo'), im=$('resImg'), tag=$('liveTag');
   im.style.display='none'; im.removeAttribute('src');
   $('resultEmpty').style.display='none'; $('resultBody').style.display='block';
-  st.onerror=()=>{ stopStream(true); };
+  try{ clearInterval(streamEndedTimer); }catch(e){}
+  st.onerror=()=>{ try{clearInterval(streamEndedTimer);}catch(e){} stopStream(true); };
+  st.onload=null; st.onloadstart=null;
+  // OTOMATIK DURDUR: akis bitince sunucu MJPEG'i kapatir -> <img> error/complete olur.
+  // Bunu polling ile yakala: complete + naturalWidth 0 veya error durumunda auto-stop.
   if(currentSrc==='yt'){
     const url=$('ytUrl').value.trim(); if(!url){ alert('YouTube URL'); return; }
     // DİKKAT: img, resultBody İÇİNDE — resultBody gizlenirse akış ekrana hiç gelmezdi
@@ -651,6 +665,22 @@ function startStream(){
   }
   tag.style.display='inline-flex'; $('liveTxt').textContent=I18N[LANG].live;
   streamActive=true; updateButtons();
+  // OTOMATIK DURDUR: backend gen_frames bitince HTTP kapaniyor -> <img> error/complete tetikler.
+  // Yedek: w===0 && complete durumunda dur. Ayni karede takili kalma kontrolu SADECE
+  // Dailymotion icin (ffmpeg pipe EOF bazen gec kapanir) — YouTube'da kamera sabitken
+  // ayni genislik uzun sure kalabilir, yanlis kesmesin diye yt'de yapmiyoruz.
+  try{ clearInterval(streamEndedTimer); }catch(e){}
+  const _isDM = (currentSrc==='yt' && $('ytUrl').value.includes('dailymotion')) || (typeof isDM!=='undefined' && isDM);
+  let _lastW=st.naturalWidth||0, _same=0;
+  streamEndedTimer=setInterval(()=>{
+    if(!streamActive){ clearInterval(streamEndedTimer); return; }
+    const w = st.naturalWidth||0;
+    if(w===0 && st.complete){ clearInterval(streamEndedTimer); stopStream(true); return; }
+    if(_isDM && w>0 && w===_lastW){ _same++; if(_same>=10){ clearInterval(streamEndedTimer); stopStream(true); } }
+    else if(w!==_lastW){ _same=0; _lastW=w; }
+  }, 900);
+  // img error/abort da kesin durdursun
+  st.addEventListener('error', ()=>{ try{clearInterval(streamEndedTimer);}catch(e){} stopStream(true); }, {once:true});
 }
 function stopStream(auto){
   const st=$('resVideo'), tag=$('liveTag');
